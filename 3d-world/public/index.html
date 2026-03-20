@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Fondi Lobby</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="blocker">
+        <div id="instructions">
+            CLICK TO PLAY
+            <span>W, A, S, D to move | Mouse to look | ESC to pause</span>
+        </div>
+    </div>
+    <div id="interactionPrompt">Press E to enter</div>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/examples/jsm/controls/PointerLockControls.js": "https://unpkg.com/three@0.128.0/examples/jsm/controls/PointerLockControls.js",
+                "three/examples/jsm/loaders/GLTFLoader.js": "https://unpkg.com/three@0.128.0/examples/jsm/loaders/GLTFLoader.js"
+            }
+        }
+    </script>
+    <script type="module" src="../src/client/main.js"></script>
+</body>
+</html>

@@ -48,7 +48,7 @@ let isSitting = false;
 let inCafe = false;
 
 // Build building boundaries from ROOMS (they include min/max fields)
-const buildingBoundaries = ROOMS.map(r => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ }));
+// const buildingBoundaries = ROOMS.map(r => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ }));
 
 // Setup lighting, floor, grid via environment module
 setupEnvironment(scene);
@@ -58,10 +58,7 @@ setupEnvironment(scene);
 // Load environment and avatar
 // loader.load('../../public/assets/models/scene.glb', (gltf) => scene.add(gltf.scene));
 
-loadBuilding(loader, scene, 'Cafe1.glb', 0, 0, 3);
-loadBuilding(loader, scene, 'Cafe2.glb', -40, 0, 2);
-loadBuilding(loader, scene, 'Restaurant1.glb', 40, 0, 2);
-loadBuilding(loader, scene, 'Restaurant2.glb', 0, -40, 2);
+loadBuilding(loader, scene, 'scene.glb', -40, 0, 3);
 
 loadAvatar(loader, playerGroup, ({ avatarModel, mixer: m, actionIdle: aIdle, actionRun: aRun, actionSit: aSit }) => {
     myAvatar = avatarModel;
@@ -146,21 +143,21 @@ function animate() {
         }
 
         // Collision: check avatar world position against building boxes
-        if (!inCafe && !isSitting && myAvatar) {
-            const avatarWorldPos = new THREE.Vector3();
-            myAvatar.getWorldPosition(avatarWorldPos);
-            let hitWall = false;
-            for (let box of buildingBoundaries) {
-                if (avatarWorldPos.x > box.minX && avatarWorldPos.x < box.maxX &&
-                    avatarWorldPos.z > box.minZ && avatarWorldPos.z < box.maxZ) {
-                    hitWall = true; break;
-                }
-            }
-            if (hitWall) {
-                cameraHolder.position.x = prevX;
-                cameraHolder.position.z = prevZ;
-            }
-        }
+        // if (!inCafe && !isSitting && myAvatar) {
+        //     const avatarWorldPos = new THREE.Vector3();
+        //     myAvatar.getWorldPosition(avatarWorldPos);
+        //     let hitWall = false;
+        //     for (let box of buildingBoundaries) {
+        //         if (avatarWorldPos.x > box.minX && avatarWorldPos.x < box.maxX &&
+        //             avatarWorldPos.z > box.minZ && avatarWorldPos.z < box.maxZ) {
+        //             hitWall = true; break;
+        //         }
+        //     }
+        //     if (hitWall) {
+        //         cameraHolder.position.x = prevX;
+        //         cameraHolder.position.z = prevZ;
+        //     }
+        // }
 
         // Proximity radar to show prompt
         if (!inCafe && !isSitting && myAvatar) {

@@ -6,7 +6,7 @@ import { ROOMS, PLAYER_SPEED, RADAR_DISTANCE } from './constant.js';
 import { updateCamera } from './camera.js';
 import { handlePlayerMovement, keys } from './movement.js';
 import { setupEnvironment } from './environment.js';
-import { createLoaderAndClock, loadBuilding, loadAvatar } from './loader.js';
+import { createLoaderAndClock, loadBuilding, loadAvatar, scanScene } from './loader.js';
 
 // --- INITIALIZE SCENE & RENDERER ---
 const scene = new THREE.Scene();
@@ -58,7 +58,8 @@ setupEnvironment(scene);
 // Load environment and avatar
 // loader.load('../../public/assets/models/scene.glb', (gltf) => scene.add(gltf.scene));
 
-loadBuilding(loader, scene, 'scene.glb', -40, 0, 3);
+loadBuilding(loader, scene, 'scene (2).glb', -40, 0, 3);
+scanScene(loader, 'scene (2).glb'); // Pre-scan to extract building boundaries for collision
 
 loadAvatar(loader, playerGroup, ({ avatarModel, mixer: m, actionIdle: aIdle, actionRun: aRun, actionSit: aSit }) => {
     myAvatar = avatarModel;

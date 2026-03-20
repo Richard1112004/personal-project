@@ -71,3 +71,29 @@ export function loadAvatar(loader, playerGroup, onLoaded) {
         console.error('An error happened loading the model:', err);
     });
 }
+
+export function scanScene(loader, filename) {
+    const url = `./assets/model/${filename}`;
+    fetch(url).then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} while fetching ${url}`);
+        const arrayBuffer = await res.arrayBuffer();
+        loader.parse(arrayBuffer, '', (gltf) => {
+            console.log("--- 📂 Scene Hierarchy Start ---");
+            gltf.scene.traverse((node) => {
+                // This prints every object's name to your F12 Console
+                console.log(`Node Name: "${node.name}" | Type: ${node.type}`);
+
+                // While we are scanning, let's enable shadows for everything automatically
+                if (node.isMesh) {
+                    node.castShadow = true;
+                    node.receiveShadow = true;
+                }
+            });
+            console.log("--- 📂 Scene Hierarchy End ---");
+        }, (err) => {
+            console.error('GLTF parse error for ' + filename + ':', err);
+        });
+    }).catch(err => {
+        console.error('Error loading ' + filename + ':', err);
+    });
+}

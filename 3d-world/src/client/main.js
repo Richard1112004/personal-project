@@ -6,7 +6,7 @@ import { ROOMS, PLAYER_SPEED, RADAR_DISTANCE } from './constant.js';
 import { updateCamera } from './camera.js';
 import { handlePlayerMovement, keys } from './movement.js';
 import { setupEnvironment } from './environment.js';
-import { createLoaderAndClock, loadBuilding, loadAvatar, scanScene } from './loader.js';
+import { createLoaderAndClock, loadBuilding, loadAvatar, allGameChairs } from './loader.js';
 
 // --- INITIALIZE SCENE & RENDERER ---
 const scene = new THREE.Scene();
@@ -46,7 +46,8 @@ let actionSit = null;
 let isMoving = false;
 let isSitting = false;
 let inCafe = false;
-
+let targetTablePos = new THREE.Vector3(); // Memory for the exact X, Y, Z
+let isTargetReady = false; // A switch so we don't teleport before it loads
 // Build building boundaries from ROOMS (they include min/max fields)
 // const buildingBoundaries = ROOMS.map(r => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ }));
 
@@ -59,8 +60,38 @@ setupEnvironment(scene);
 // loader.load('../../public/assets/models/scene.glb', (gltf) => scene.add(gltf.scene));
 
 loadBuilding(loader, scene, 'scene (2).glb', -40, 0, 3);
-scanScene(loader, 'scene (2).glb'); // Pre-scan to extract building boundaries for collision
 
+// scanScene(loader, 'scene (2).glb', (loadedWorld) => {
+//     console.log("The world is ready!");
+// //     loadedWorld.scale.set(100, 100, 100); 
+//     loadedWorld.updateMatrixWorld(true);
+//     // 2. Scan EVERY object in the entire city
+//     loadedWorld.traverse((node) => {
+        
+//         // Inside your traverse loop
+//         // Inside your scanScene traverse loop...
+//         // if (node.name.includes("Chair")) {
+//         //         node.updateMatrixWorld(true); 
+
+//         //         const boundingBox = new THREE.Box3().setFromObject(node);
+//         //         const trueCenter = new THREE.Vector3();
+//         //         boundingBox.getCenter(trueCenter);
+
+//         //         // --- THE MAGIC FIX ---
+//         //         // We save the position but DIVIDE by 100.
+//         //         // This scales the 'Target' back down to match your Avatar's 1x GPS.
+//         //         allGameChairs.push({
+//         //                 name: node.name,
+//         //                 x: trueCenter.x, 
+//         //                 z: trueCenter.z,
+//         //                 isOccupied: false
+//         //         });
+//         // }
+//     });
+
+//     console.log(`✅ Auto-Scan Complete! Found ${allGameChairs.length} chairs.`);
+//     scene.add(loadedWorld);
+// });
 loadAvatar(loader, playerGroup, ({ avatarModel, mixer: m, actionIdle: aIdle, actionRun: aRun, actionSit: aSit }) => {
     myAvatar = avatarModel;
     mixer = m;
@@ -184,6 +215,74 @@ function animate() {
     updateCamera(camera, cameraHolder);
     renderer.render(scene, camera);
 }
+window.addEventListener('keydown', (event) => {
+    // 1. Did the browser even hear the key?
+    if (event.key.toLowerCase() === 'e') {
+        console.log("👉 'E' key detected! Checking the gatekeepers...");
+        
+        // 2. Print the exact status of all 4 locks
+        console.log(`🔒 Pointer Locked (Can move)? : ${controls.isLocked}`);
+        console.log(`🪑 Already Sitting?          : ${isSitting}`);
+        console.log(`☕ In Cafe Mode?            : ${inCafe}`);
+        console.log(`🧍 Avatar Loaded?           : ${!!myAvatar}`);
+
+        // 3. The original logic
+        if (controls.isLocked) {
+        console.log("🎬 Attempting to find a chair...");
+            if (!isSitting && !inCafe && myAvatar) {
+                
+                const avatarPos = new THREE.Vector3();
+                myAvatar.getWorldPosition(avatarPos);
+                
+                let closestChair = null;
+                let closestDistance = Infinity;
+                console.log(`📡 Scanning for chairs within ${RADAR_DISTANCE} units...`);
+                for (let chair of allGameChairs) {
+                console.log(`Checking ${chair.name} at X:${chair.x.toFixed(2)}, Z:${chair.z.toFixed(2)} (Occupied: ${chair.isOccupied})`);      
+                    if (!chair.isOccupied) {
+                        console.log(`Checking ${chair.name} at X:${chair.x.toFixed(2)}, Z:${chair.z.toFixed(2)}`);
+                        const distance = Math.sqrt(
+                            Math.pow(avatarPos.x - chair.x, 2) + 
+                            Math.pow(avatarPos.z - chair.z, 2)
+                        );
+
+                        if (distance < closestDistance) {
+                            closestDistance = distance;
+                            closestChair = chair;
+                        }
+                    }
+                }
+
+                console.log(`🤖 DEBUG RADAR:`);
+                console.log(`My GPS: X=${avatarPos.x.toFixed(2)}, Z=${avatarPos.z.toFixed(2)}`);
+                if (closestChair) {
+                    console.log(`Target: ${closestChair.name} at X=${closestChair.x.toFixed(2)}, Z=${closestChair.z.toFixed(2)}`);
+                    console.log(`Math Distance: ${closestDistance.toFixed(2)} units away.`);
+                }
+
+                if (closestChair && closestDistance < 10) {
+                    console.log(`✅ SUCCESS! Sitting in ${closestChair.name}!`);
+                    inCafe = true;
+                    closestChair.isOccupied = true;
+                    sitOnChair(closestChair.x, closestChair.z); 
+                    if (promptUI) promptUI.style.display = 'none';
+                } else {
+                    console.log("❌ FAILED: Still too far away.");
+                }
+            } else {
+                console.warn("⛔ BLOCKED: You are either already sitting, in the cafe, or the Avatar hasn't loaded yet!");
+            }
+        } else {
+            console.warn("⛔ BLOCKED: You must click the screen to lock your mouse before pressing E!");
+        }
+    }
+});
+window.addEventListener('keydown', (event) => {
+    // Press 'P' to print your exact current location
+    if (event.key.toLowerCase() === 'p') {
+        console.log(`📍 MY GPS LOCATION: X: ${cameraHolder.position.x.toFixed(2)}, Z: ${cameraHolder.position.z.toFixed(2)}`);
+    }
+});
 animate();
 
 window.addEventListener('resize', () => {

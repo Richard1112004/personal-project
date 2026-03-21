@@ -28,17 +28,19 @@ export function loadBuilding(loader, scene, filename, x, z, scaleFactor) {
 
             // 3. Traverse ONCE to add shadows AND scan for chairs!
             const tableBlacklist = ["183", "199", "188", "190", "192", "195", "178", "177", "175"];
+            const realChairIDs = ["018_48", "017_47", "016_46", "019_49", "023_55", "022_54", "015_52", "021_53"];
             building.traverse((node) => {
                 if (node.isMesh) {
                     node.receiveShadow = true;
                     node.castShadow = true;
                 }
-                
+                const isRealChair = realChairIDs.some(id => node.name.includes(id));
                 // --- THE BEACON SCANNER ---
                 // We check for "Chair" or the Maya "tableChair" names
-                if (node.name.includes("Chair") || node.name.includes("tableChair")) {
+                if (node.name.includes("Chair") || isRealChair) {
                         node.updateMatrixWorld(true); 
                         const isTable = tableBlacklist.some(blacklisted => node.name.includes(blacklisted));
+                        
                         if (!isTable) {
                                 // 1. IGNORE the broken pivot points.
                                 // Instead, wrap a mathematical box around the physical geometry itself.

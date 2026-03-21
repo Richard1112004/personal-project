@@ -48,6 +48,8 @@ let isSitting = false;
 let inCafe = false;
 let targetTablePos = new THREE.Vector3(); // Memory for the exact X, Y, Z
 let isTargetReady = false; // A switch so we don't teleport before it loads
+let _savedCameraPos = null;
+let _savedCameraQuat = null;
 
 // Build building boundaries from ROOMS (they include min/max fields)
 // const buildingBoundaries = ROOMS.map(r => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ }));
@@ -106,6 +108,10 @@ const promptUI = document.getElementById('interactionPrompt');
 const enterCafeBtn = document.getElementById('enterCafeBtn');
 
 function sitOnChair(name, targetX, targetZ, targetRotationY, targetRotationX, targetRotationZ) {
+    // Save current camera pose so we can restore when standing up
+    _savedCameraPos = cameraHolder.position.clone();
+    _savedCameraQuat = cameraHolder.quaternion.clone();
+
     isSitting = true;
     console.log(`🪑 Sitting on ${name} at X:${targetX.toFixed(2)}, Z:${targetZ.toFixed(2)},RotX:${targetRotationX.toFixed(2)}, RotY:${targetRotationY.toFixed(2)}, RotZ:${targetRotationZ.toFixed(2)}`);
     
@@ -148,7 +154,7 @@ function sitOnChair(name, targetX, targetZ, targetRotationY, targetRotationX, ta
                 console.warn(`⚠️ Unhandled chair rotation for ${name} at X:${targetX.toFixed(2)}, Z:${targetZ.toFixed(2)}. Defaulting to facing North logic.`);
         }
     }
-
+    playerGroup.rotation.y = cameraHolder.rotation.y;
     // Your excellent animation logic
     if (actionIdle) actionIdle.stop();
     if (actionRun) actionRun.stop();
@@ -160,14 +166,44 @@ function sitOnChair(name, targetX, targetZ, targetRotationY, targetRotationX, ta
     }
 }
 
-if (enterCafeBtn) {
-    enterCafeBtn.addEventListener('click', () => {
-        inCafe = true;
-        sitOnChair(-35.23, 15.76, Math.PI / 2); // Example coordinates for a chair in the cafe
-        enterCafeBtn.style.display = 'none';
-        controls.lock();
-    });
+// Stand up / resume running: restore camera and animations
+function standUp() {
+    if (!isSitting) return;
+    isSitting = false;
+    inCafe = false;
+
+    // Restore saved camera pose if available
+    if (_savedCameraPos && _savedCameraQuat) {
+        cameraHolder.position.copy(_savedCameraPos);
+        cameraHolder.quaternion.copy(_savedCameraQuat);
+        playerGroup.position.copy(cameraHolder.position);
+        playerGroup.rotation.y = cameraHolder.rotation.y;
+    }
+
+    // Stop sitting animation
+    if (actionSit) actionSit.stop();
+
+    // Choose idle or run based on movement keys
+    const moving = keys['w'] || keys['a'] || keys['s'] || keys['d'] || keys['arrowup'] || keys['arrowdown'] || keys['arrowleft'] || keys['arrowright'];
+    if (moving) {
+        if (actionRun) actionRun.play();
+    } else {
+        if (actionIdle) actionIdle.play();
+    }
+
+    // Clear saved pose
+    _savedCameraPos = null;
+    _savedCameraQuat = null;
 }
+
+// if (enterCafeBtn) {
+//     enterCafeBtn.addEventListener('click', () => {
+//         inCafe = true;
+//         sitOnChair(-35.23, 15.76, Math.PI / 2); // Example coordinates for a chair in the cafe
+//         enterCafeBtn.style.display = 'none';
+//         controls.lock();
+//     });
+// }
 
 // Optional debug boxes
 function drawDebugBoxes() {
@@ -197,24 +233,41 @@ function animate() {
     if (controls.isLocked) {
         const { prevX, prevZ } = handlePlayerMovement(controls, playerGroup, cameraHolder, PLAYER_SPEED, isSitting);
 
-        // Support arrow keys for movement alongside WASD
-        if (keys['arrowup']) controls.moveForward(PLAYER_SPEED);
-        if (keys['arrowdown']) controls.moveForward(-PLAYER_SPEED);
-        if (keys['arrowleft']) controls.moveRight(-PLAYER_SPEED);
-        if (keys['arrowright']) controls.moveRight(PLAYER_SPEED);
+        if (!isSitting) {
+            // Support arrow keys for movement alongside WASD
+            if (keys['arrowup']) controls.moveForward(PLAYER_SPEED);
+            if (keys['arrowdown']) controls.moveForward(-PLAYER_SPEED);
+            if (keys['arrowleft']) controls.moveRight(-PLAYER_SPEED);
+            if (keys['arrowright']) controls.moveRight(PLAYER_SPEED);
 
-        // Animation transitions
-        const isPressingMove = keys['w'] || keys['a'] || keys['s'] || keys['d'] ||
-                               keys['arrowup'] || keys['arrowdown'] || keys['arrowleft'] || keys['arrowright'];
+            // Animation transitions
+            const isPressingMove = keys['w'] || keys['a'] || keys['s'] || keys['d'] ||
+                                   keys['arrowup'] || keys['arrowdown'] || keys['arrowleft'] || keys['arrowright'];
 
-        if (isPressingMove && !isMoving) {
-            isMoving = true;
+            if (isPressingMove && !isMoving) {
+                isMoving = true;
+                if (actionIdle) actionIdle.stop();
+                if (actionRun) actionRun.play();
+            } else if (!isPressingMove && isMoving) {
+                isMoving = false;
+                if (actionRun) actionRun.stop();
+                if (actionIdle) actionIdle.play();
+            }
+        } else {
+            // If sitting, ensure running is stopped and sit animation plays
+            if (isMoving) {
+                isMoving = false;
+                if (actionRun) actionRun.stop();
+            }
             if (actionIdle) actionIdle.stop();
-            if (actionRun) actionRun.play();
-        } else if (!isPressingMove && isMoving) {
-            isMoving = false;
-            if (actionRun) actionRun.stop();
-            if (actionIdle) actionIdle.play();
+            // if (actionSit) {
+            //     if (!actionSit.isRunning()) {
+            //         actionSit.reset();
+            //         actionSit.setLoop(THREE.LoopOnce);
+            //         actionSit.clampWhenFinished = true;
+            //         actionSit.play();
+            //     }
+            // }
         }
 
         // Collision: check avatar world position against building boxes
@@ -324,6 +377,18 @@ window.addEventListener('keydown', (event) => {
     // Press 'P' to print your exact current location
     if (event.key.toLowerCase() === 'p') {
         console.log(`📍 MY GPS LOCATION: X: ${cameraHolder.position.x.toFixed(2)}, Z: ${cameraHolder.position.z.toFixed(2)}`);
+    }
+});
+
+// Press 'O' to stand up / resume running when sitting
+window.addEventListener('keydown', (event) => {
+    if (event.key.toLowerCase() === 'o') {
+        if (!isSitting) {
+            console.warn('⛔ You are not sitting.');
+            return;
+        }
+        console.log('🔓 Standing up and resuming movement');
+        standUp();
     }
 });
 animate();

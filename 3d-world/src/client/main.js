@@ -50,6 +50,7 @@ let targetTablePos = new THREE.Vector3(); // Memory for the exact X, Y, Z
 let isTargetReady = false; // A switch so we don't teleport before it loads
 let _savedCameraPos = null;
 let _savedCameraQuat = null;
+let currentChair = null; // currently occupied chair object from allGameChairs
 
 // Build building boundaries from ROOMS (they include min/max fields)
 // const buildingBoundaries = ROOMS.map(r => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ }));
@@ -171,6 +172,12 @@ function standUp() {
     if (!isSitting) return;
     isSitting = false;
     inCafe = false;
+
+    // Free the chair we occupied (if any)
+    if (currentChair) {
+        currentChair.isOccupied = false;
+        currentChair = null;
+    }
 
     // Restore saved camera pose if available
     if (_savedCameraPos && _savedCameraQuat) {
@@ -359,6 +366,8 @@ window.addEventListener('keydown', (event) => {
                     console.log(`✅ SUCCESS! Sitting in ${closestChair.name}!`);
                     inCafe = true;
                     closestChair.isOccupied = true;
+                    // remember which chair we occupied so we can free it when standing
+                    currentChair = closestChair;
                     // console.log("clossestChair.rotation x:", closestChair.rotation.x.toFixed(2), "y:", closestChair.rotation.y.toFixed(2), "z:", closestChair.rotation.z.toFixed(2));
                     sitOnChair(closestChair.name, closestChair.x, closestChair.z, closestChair.rotation.y, closestChair.rotation.x, closestChair.rotation.z); 
                     if (promptUI) promptUI.style.display = 'none';

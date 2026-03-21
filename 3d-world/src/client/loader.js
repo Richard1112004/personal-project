@@ -48,6 +48,10 @@ export function loadBuilding(loader, scene, filename, x, z, scaleFactor) {
                                 const physicalCenter = new THREE.Vector3();
                                 boundingBox.getCenter(physicalCenter);
 
+                                const worldQuaternion = new THREE.Quaternion();
+                                node.getWorldQuaternion(worldQuaternion);
+                                const rotationEuler = new THREE.Euler().setFromQuaternion(worldQuaternion);
+
                                 // 2. Use the physical center of the geometry
                                 const finalX = physicalCenter.x;
                                 const finalZ = physicalCenter.z;
@@ -57,10 +61,11 @@ export function loadBuilding(loader, scene, filename, x, z, scaleFactor) {
                                         name: node.name,
                                         x: finalX, 
                                         z: finalZ,
+                                        rotation: rotationEuler, // Store the Y rotation for later use when sitting
                                         isOccupied: false
                                 });
                                 
-                                console.log(`🪑 Logged ${node.name} at X:${finalX.toFixed(2)}, Z:${finalZ.toFixed(2)}`);
+                                console.log(`🪑 Logged ${node.name} at X:${finalX.toFixed(2)}, Z:${finalZ.toFixed(2)}, Rotation x:${rotationEuler.x.toFixed(2)}, y:${rotationEuler.y.toFixed(2)}, z:${rotationEuler.z.toFixed(2)}`);
                         }
 
                         

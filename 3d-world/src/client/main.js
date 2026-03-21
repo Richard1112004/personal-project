@@ -48,6 +48,7 @@ let isSitting = false;
 let inCafe = false;
 let targetTablePos = new THREE.Vector3(); // Memory for the exact X, Y, Z
 let isTargetReady = false; // A switch so we don't teleport before it loads
+
 // Build building boundaries from ROOMS (they include min/max fields)
 // const buildingBoundaries = ROOMS.map(r => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ }));
 
@@ -104,14 +105,56 @@ loadAvatar(loader, playerGroup, ({ avatarModel, mixer: m, actionIdle: aIdle, act
 const promptUI = document.getElementById('interactionPrompt');
 const enterCafeBtn = document.getElementById('enterCafeBtn');
 
-function sitOnChair(targetX, targetZ) {
+function sitOnChair(name, targetX, targetZ, targetRotationY, targetRotationX, targetRotationZ) {
     isSitting = true;
-    cameraHolder.position.set(targetX, 2, targetZ);
+    console.log(`🪑 Sitting on ${name} at X:${targetX.toFixed(2)}, Z:${targetZ.toFixed(2)},RotX:${targetRotationX.toFixed(2)}, RotY:${targetRotationY.toFixed(2)}, RotZ:${targetRotationZ.toFixed(2)}`);
+    
+    // Convert to a string once to make the if-statements cleaner
+    const rotYStr = targetRotationY.toFixed(2);
+    const rotXStr = targetRotationX.toFixed(2);
+    const rotZStr = targetRotationZ.toFixed(2);
+    
+
+    if (rotYStr === "-1.57") {
+        // Facing East
+        cameraHolder.position.set(targetX, 6.5, targetZ + 1);
+        cameraHolder.rotation.y = targetRotationY + Math.PI/2;
+    } 
+    else if (rotYStr === "1.57") {
+        // Facing West
+        cameraHolder.position.set(targetX, 6.5, targetZ - 1);
+        cameraHolder.rotation.y = targetRotationY - Math.PI/2;
+    } 
+    else if (rotYStr === "0.00" && rotYStr !== "-0.00") {
+        if (rotXStr === "0.00" && rotZStr === "0.00") {
+            // Facing North, perfectly aligned
+            cameraHolder.position.set(targetX + 1, 6.5, targetZ); 
+            cameraHolder.rotation.y = targetRotationY - Math.PI/2; 
+        } else if (rotXStr === "3.14" || rotZStr === "3.14") {
+            // Facing North but with some weird tilt (like the cafe chairs)
+            cameraHolder.position.set(targetX - 1, 6.5, targetZ); 
+            cameraHolder.rotation.y = targetRotationY + Math.PI/2; 
+        }
+    }
+    else {
+        // console.log(`⚠️ Unhandled chair rotation for ${name} at X:${targetX.toFixed(2)}, Z:${targetZ.toFixed(2)}, RotY:${rotStr}. Defaulting to facing North logic.`);
+        if (rotXStr === "0.00" && rotXStr === "0.00") {
+                cameraHolder.position.set(targetX - 1, 6.5, targetZ);
+                cameraHolder.rotation.y = targetRotationY + Math.PI/2;
+            } else if (rotXStr === "-3.14" || rotZStr === "-3.14") {
+                cameraHolder.position.set(targetX + 1, 6.5, targetZ);
+                cameraHolder.rotation.y = targetRotationY - Math.PI/2;
+            } else {
+                console.warn(`⚠️ Unhandled chair rotation for ${name} at X:${targetX.toFixed(2)}, Z:${targetZ.toFixed(2)}. Defaulting to facing North logic.`);
+        }
+    }
+
+    // Your excellent animation logic
     if (actionIdle) actionIdle.stop();
     if (actionRun) actionRun.stop();
     if (actionSit) {
         actionSit.reset();
-        actionSit.setLoop(THREE.LoopOnce);
+        actionSit.setLoop(THREE.LoopOnce, 1);
         actionSit.clampWhenFinished = true;
         actionSit.play();
     }
@@ -120,7 +163,7 @@ function sitOnChair(targetX, targetZ) {
 if (enterCafeBtn) {
     enterCafeBtn.addEventListener('click', () => {
         inCafe = true;
-        sitOnChair(-35.23, 15.76);
+        sitOnChair(-35.23, 15.76, Math.PI / 2); // Example coordinates for a chair in the cafe
         enterCafeBtn.style.display = 'none';
         controls.lock();
     });
@@ -152,7 +195,7 @@ function animate() {
     if (mixer) mixer.update(delta);
 
     if (controls.isLocked) {
-        const { prevX, prevZ } = handlePlayerMovement(controls, playerGroup, cameraHolder, PLAYER_SPEED);
+        const { prevX, prevZ } = handlePlayerMovement(controls, playerGroup, cameraHolder, PLAYER_SPEED, isSitting);
 
         // Support arrow keys for movement alongside WASD
         if (keys['arrowup']) controls.moveForward(PLAYER_SPEED);
@@ -218,17 +261,16 @@ function animate() {
 window.addEventListener('keydown', (event) => {
     // 1. Did the browser even hear the key?
     if (event.key.toLowerCase() === 'e') {
-        console.log("👉 'E' key detected! Checking the gatekeepers...");
+        // console.log("👉 'E' key detected! Checking the gatekeepers...");
         
-        // 2. Print the exact status of all 4 locks
-        console.log(`🔒 Pointer Locked (Can move)? : ${controls.isLocked}`);
-        console.log(`🪑 Already Sitting?          : ${isSitting}`);
-        console.log(`☕ In Cafe Mode?            : ${inCafe}`);
-        console.log(`🧍 Avatar Loaded?           : ${!!myAvatar}`);
+        // // 2. Print the exact status of all 4 locks
+        // console.log(`🔒 Pointer Locked (Can move)? : ${controls.isLocked}`);
+        // console.log(`🪑 Already Sitting?          : ${isSitting}`);
+        // console.log(`☕ In Cafe Mode?            : ${inCafe}`);
+        // console.log(`🧍 Avatar Loaded?           : ${!!myAvatar}`);
 
         // 3. The original logic
         if (controls.isLocked) {
-        console.log("🎬 Attempting to find a chair...");
             if (!isSitting && !inCafe && myAvatar) {
                 
                 const avatarPos = new THREE.Vector3();
@@ -236,11 +278,11 @@ window.addEventListener('keydown', (event) => {
                 
                 let closestChair = null;
                 let closestDistance = Infinity;
-                console.log(`📡 Scanning for chairs within ${RADAR_DISTANCE} units...`);
+                // console.log(`📡 Scanning for chairs within ${RADAR_DISTANCE} units...`);
                 for (let chair of allGameChairs) {
-                console.log(`Checking ${chair.name} at X:${chair.x.toFixed(2)}, Z:${chair.z.toFixed(2)} (Occupied: ${chair.isOccupied})`);      
+                // console.log(`Checking ${chair.name} at X:${chair.x.toFixed(2)}, Z:${chair.z.toFixed(2)} (Occupied: ${chair.isOccupied})`);      
                     if (!chair.isOccupied) {
-                        console.log(`Checking ${chair.name} at X:${chair.x.toFixed(2)}, Z:${chair.z.toFixed(2)}`);
+                        // console.log(`Checking ${chair.name} at X:${chair.x.toFixed(2)}, Z:${chair.z.toFixed(2)}`);
                         const distance = Math.sqrt(
                             Math.pow(avatarPos.x - chair.x, 2) + 
                             Math.pow(avatarPos.z - chair.z, 2)
@@ -253,18 +295,19 @@ window.addEventListener('keydown', (event) => {
                     }
                 }
 
-                console.log(`🤖 DEBUG RADAR:`);
-                console.log(`My GPS: X=${avatarPos.x.toFixed(2)}, Z=${avatarPos.z.toFixed(2)}`);
-                if (closestChair) {
-                    console.log(`Target: ${closestChair.name} at X=${closestChair.x.toFixed(2)}, Z=${closestChair.z.toFixed(2)}`);
-                    console.log(`Math Distance: ${closestDistance.toFixed(2)} units away.`);
-                }
+                // console.log(`🤖 DEBUG RADAR:`);
+                // console.log(`My GPS: X=${avatarPos.x.toFixed(2)}, Z=${avatarPos.z.toFixed(2)}`);
+                // if (closestChair) {
+                //     console.log(`Target: ${closestChair.name} at X=${closestChair.x.toFixed(2)}, Z=${closestChair.z.toFixed(2)}`);
+                //     console.log(`Math Distance: ${closestDistance.toFixed(2)} units away.`);
+                // }
 
                 if (closestChair && closestDistance < 10) {
                     console.log(`✅ SUCCESS! Sitting in ${closestChair.name}!`);
                     inCafe = true;
                     closestChair.isOccupied = true;
-                    sitOnChair(closestChair.x, closestChair.z); 
+                    // console.log("clossestChair.rotation x:", closestChair.rotation.x.toFixed(2), "y:", closestChair.rotation.y.toFixed(2), "z:", closestChair.rotation.z.toFixed(2));
+                    sitOnChair(closestChair.name, closestChair.x, closestChair.z, closestChair.rotation.y, closestChair.rotation.x, closestChair.rotation.z); 
                     if (promptUI) promptUI.style.display = 'none';
                 } else {
                     console.log("❌ FAILED: Still too far away.");

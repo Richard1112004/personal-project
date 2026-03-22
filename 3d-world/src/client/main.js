@@ -309,23 +309,35 @@ function animate() {
         }
 
         // Proximity radar to show prompt
-        // if (!inCafe && !isSitting && myAvatar) {
-        //     const avatarWorldPos = new THREE.Vector3();
-        //     myAvatar.getWorldPosition(avatarWorldPos);
-        //     let foundRoom = null;
-        //     for (let room of ROOMS) {
-        //         const dist = Math.sqrt(Math.pow(avatarWorldPos.x - room.doorX, 2) + Math.pow(avatarWorldPos.z - room.doorZ, 2));
-        //         if (dist < RADAR_DISTANCE) { foundRoom = room; break; }
-        //     }
-        //     if (foundRoom) {
-        //         promptUI.innerText = `Press E to enter ${foundRoom.name} (${foundRoom.currentOccupied}/${foundRoom.maxChairs})`;
-        //         promptUI.style.display = 'block';
-        //     } else {
-        //         promptUI.style.display = 'none';
-        //     }
-        // } else {
-        //     if (promptUI) promptUI.style.display = 'none';
-        // }
+        if (!inCafe && !isSitting && myAvatar) {
+            const avatarWorldPos = new THREE.Vector3();
+            myAvatar.getWorldPosition(avatarWorldPos);
+            let foundRoom = null;
+            
+            for (let room of ROOMS) {
+                // Instead of looking for a single door, we expand the building's walls
+                // by your RADAR_DISTANCE. If the avatar steps into this "halo", it triggers!
+                if (avatarWorldPos.x > room.minX - RADAR_DISTANCE && 
+                    avatarWorldPos.x < room.maxX + RADAR_DISTANCE &&
+                    avatarWorldPos.z > room.minZ - RADAR_DISTANCE && 
+                    avatarWorldPos.z < room.maxZ + RADAR_DISTANCE) {
+                    
+                    foundRoom = room; 
+                    break; 
+                }
+            }
+            
+            if (foundRoom) {
+                // If it's a park or plaza, you might not want to show chair counts, 
+                // but this keeps your original formatting!
+                promptUI.innerText = `Press E to enter ${foundRoom.name} (${foundRoom.currentOccupied}/${foundRoom.maxChairs})`;
+                promptUI.style.display = 'block';
+            } else {
+                promptUI.style.display = 'none';
+            }
+        } else {
+            if (promptUI) promptUI.style.display = 'none';
+        }
     }
 
     // Camera follow logic

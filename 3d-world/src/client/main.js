@@ -125,7 +125,7 @@ function sitOnChair(name, targetX, targetZ, targetRotationY, targetRotationX, ta
     if (rotYStr === "-1.57") {
         // Facing East
         cameraHolder.position.set(targetX, 6.5, targetZ + 1);
-        cameraHolder.rotation.y = targetRotationY + Math.PI/2;
+        cameraHolder.rotation.y = targetRotationY - Math.PI/2;
     } 
     else if (rotYStr === "1.57") {
         // Facing West
@@ -137,7 +137,7 @@ function sitOnChair(name, targetX, targetZ, targetRotationY, targetRotationX, ta
             // Facing North, perfectly aligned
             cameraHolder.position.set(targetX + 1, 6.5, targetZ); 
             cameraHolder.rotation.y = targetRotationY - Math.PI/2; 
-        } else if (rotXStr === "3.14" || rotZStr === "3.14") {
+        } else if (rotXStr === "3.14" || rotZStr === "-3.14") {
             // Facing North but with some weird tilt (like the cafe chairs)
             cameraHolder.position.set(targetX - 1, 6.5, targetZ); 
             cameraHolder.rotation.y = targetRotationY + Math.PI/2; 

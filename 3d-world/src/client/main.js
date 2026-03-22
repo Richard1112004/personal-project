@@ -63,7 +63,7 @@ setupEnvironment(scene);
 // Load environment and avatar
 // loader.load('../../public/assets/models/scene.glb', (gltf) => scene.add(gltf.scene));
 
-loadBuilding(loader, scene, 'scene (2).glb', -40, 0, 3);
+loadBuilding(loader, scene, 'scene (1).glb', -40, 0, 3);
 
 // scanScene(loader, 'scene (2).glb', (loadedWorld) => {
 //     console.log("The world is ready!");
@@ -213,23 +213,31 @@ function standUp() {
 // }
 
 // Optional debug boxes
+// Change this function in your main file
 function drawDebugBoxes() {
-    buildingBoundaries.forEach(box => {
-        const width = box.maxX - box.minX;
-        const depth = box.maxZ - box.minZ;
-        const height = 15;
-        const centerX = box.minX + (width / 2);
-        const centerZ = box.minZ + (depth / 2);
+    // We now use ROOMS which contains the scanned data from Cafe1, Cafe2, etc.
+    ROOMS.forEach(room => {
+        const width = room.maxX - room.minX;
+        const depth = room.maxZ - room.minZ;
+        const height = 10; // Height of the red "ghost" wall
+        
+        // Calculate the center point based on the min/max scanned values
+        const centerX = room.minX + (width / 2);
+        const centerZ = room.minZ + (depth / 2);
+        
         const geo = new THREE.BoxGeometry(width, height, depth);
         const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
         const debugMesh = new THREE.Mesh(geo, mat);
+        
+        // Position the box so the bottom sits on the floor (height/2)
         debugMesh.position.set(centerX, height / 2, centerZ);
+        
         scene.add(debugMesh);
     });
 }
 
 // Uncomment to visualize collision boxes
-// drawDebugBoxes();
+drawDebugBoxes();
 
 // --- GAME LOOP ---
 function animate() {
@@ -277,41 +285,47 @@ function animate() {
             // }
         }
 
-        // Collision: check avatar world position against building boxes
+        // --- PHYSICAL COLLISIONS (Solid Walls) ---
+        // Only check collisions if we aren't sitting
+        if (!isSitting) {
+            let hitWall = false;
+            
+            // Loop through every room to see if we stepped inside its box
+            for (let room of ROOMS) {
+                // We add a tiny 0.5 buffer so the camera doesn't clip inside the wall
+                if (cameraHolder.position.x > room.minX - 0.5 && cameraHolder.position.x < room.maxX + 0.5 &&
+                    cameraHolder.position.z > room.minZ - 0.5 && cameraHolder.position.z < room.maxZ + 0.5) {
+                    
+                    hitWall = true; 
+                    break; // Stop checking, we already hit something
+                }
+            }
+
+            // If we hit a wall, instantly teleport the player back to where they were 1 frame ago
+            if (hitWall) {
+                cameraHolder.position.x = prevX;
+                cameraHolder.position.z = prevZ;
+            }
+        }
+
+        // Proximity radar to show prompt
         // if (!inCafe && !isSitting && myAvatar) {
         //     const avatarWorldPos = new THREE.Vector3();
         //     myAvatar.getWorldPosition(avatarWorldPos);
-        //     let hitWall = false;
-        //     for (let box of buildingBoundaries) {
-        //         if (avatarWorldPos.x > box.minX && avatarWorldPos.x < box.maxX &&
-        //             avatarWorldPos.z > box.minZ && avatarWorldPos.z < box.maxZ) {
-        //             hitWall = true; break;
-        //         }
+        //     let foundRoom = null;
+        //     for (let room of ROOMS) {
+        //         const dist = Math.sqrt(Math.pow(avatarWorldPos.x - room.doorX, 2) + Math.pow(avatarWorldPos.z - room.doorZ, 2));
+        //         if (dist < RADAR_DISTANCE) { foundRoom = room; break; }
         //     }
-        //     if (hitWall) {
-        //         cameraHolder.position.x = prevX;
-        //         cameraHolder.position.z = prevZ;
+        //     if (foundRoom) {
+        //         promptUI.innerText = `Press E to enter ${foundRoom.name} (${foundRoom.currentOccupied}/${foundRoom.maxChairs})`;
+        //         promptUI.style.display = 'block';
+        //     } else {
+        //         promptUI.style.display = 'none';
         //     }
+        // } else {
+        //     if (promptUI) promptUI.style.display = 'none';
         // }
-
-        // Proximity radar to show prompt
-        if (!inCafe && !isSitting && myAvatar) {
-            const avatarWorldPos = new THREE.Vector3();
-            myAvatar.getWorldPosition(avatarWorldPos);
-            let foundRoom = null;
-            for (let room of ROOMS) {
-                const dist = Math.sqrt(Math.pow(avatarWorldPos.x - room.doorX, 2) + Math.pow(avatarWorldPos.z - room.doorZ, 2));
-                if (dist < RADAR_DISTANCE) { foundRoom = room; break; }
-            }
-            if (foundRoom) {
-                promptUI.innerText = `Press E to enter ${foundRoom.name} (${foundRoom.currentOccupied}/${foundRoom.maxChairs})`;
-                promptUI.style.display = 'block';
-            } else {
-                promptUI.style.display = 'none';
-            }
-        } else {
-            if (promptUI) promptUI.style.display = 'none';
-        }
     }
 
     // Camera follow logic

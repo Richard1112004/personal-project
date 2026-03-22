@@ -67,8 +67,13 @@ export function loadBuilding(loader, scene, filename, x, z, scaleFactor) {
                                 
                                 console.log(`🪑 Logged ${node.name} at X:${finalX.toFixed(2)}, Z:${finalZ.toFixed(2)}, Rotation x:${rotationEuler.x.toFixed(2)}, y:${rotationEuler.y.toFixed(2)}, z:${rotationEuler.z.toFixed(2)}`);
                         }
-
-                        
+                }
+                const targetNames = ["Cafe1", "Cafe2", "Restaurant1", "Restaurant2", "the_park", "plaza"];
+                // Check if the current object's name matches any of our target buildings
+                if (targetNames.some(target => node.name.includes(target))) {
+                    node.updateMatrixWorld(true);
+                    const boundingBox = new THREE.Box3().setFromObject(node);
+                    console.log(`{ name: "${node.name}", doorX: 0, doorZ: 0, minX: ${boundingBox.min.x.toFixed(2)}, maxX: ${boundingBox.max.x.toFixed(2)}, minZ: ${boundingBox.min.z.toFixed(2)}, maxZ: ${boundingBox.max.z.toFixed(2)} },`);
                 }
             });
             
@@ -122,32 +127,3 @@ export function loadAvatar(loader, playerGroup, onLoaded) {
         console.error('An error happened loading the model:', err);
     });
 }
-
-// export function scanScene(loader, filename, onFinished) {
-// const url = `./assets/model/${filename}`;
-//     fetch(url).then(async (res) => {
-//         if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} while fetching ${url}`);
-//         const arrayBuffer = await res.arrayBuffer();
-//         loader.parse(arrayBuffer, '', (gltf) => {
-//             const building = gltf.scene;
-//             console.log("--- 📂 Scene Hierarchy Start ---");
-//                 gltf.scene.traverse((node) => {
-//                         // This prints every object's name to your F12 Console
-//                         console.log(`Node Name: "${node.name}" | Type: ${node.type}`);
-                        
-//                         // While we are scanning, let's enable shadows for everything automatically
-//                         if (node.isMesh) {
-//                         node.castShadow = true;
-//                         node.receiveShadow = true;
-//                         }
-//                 });
-//                 console.log("--- 📂 Scene Hierarchy End ---");
-//                 if (onFinished) onFinished(gltf.scene);
-           
-//         }, (err) => {
-//             console.error('GLTF parse error for ' + filename + ':', err);
-//         });
-//     }).catch(err => {
-//         console.error('Error loading ' + filename + ':', err);
-//     });
-// }

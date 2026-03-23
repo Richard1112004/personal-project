@@ -4,7 +4,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 // Import our modules (note filenames in this project)
 import { ROOMS, PLAYER_SPEED, RADAR_DISTANCE } from './constant.js';
 import { updateCamera } from './camera.js';
-import { handlePlayerMovement, keys } from './movement.js';
+import { handlePlayerMovement, keys, sitOnChair, standUp, exitRoom } from './movement.js';
 import { setupEnvironment } from './environment.js';
 import { createLoaderAndClock, loadBuilding, loadAvatar, allGameChairs } from './loader.js';
 
@@ -127,113 +127,7 @@ loadAvatar(loader, playerGroup, ({ avatarModel, mixer: m, actionIdle: aIdle, act
 const promptUI = document.getElementById('interactionPrompt');
 const enterCafeBtn = document.getElementById('enterCafeBtn');
 
-function sitOnChair(name, targetX, targetZ, targetRotationY, targetRotationX, targetRotationZ) {
-    // Save current camera pose so we can restore when standing up
-    _savedCameraPos = cameraHolder.position.clone();
-    _savedCameraQuat = cameraHolder.quaternion.clone();
-
-    isSitting = true;
-    console.log(`🪑 Sitting on ${name} at X:${targetX.toFixed(2)}, Z:${targetZ.toFixed(2)},RotX:${targetRotationX.toFixed(2)}, RotY:${targetRotationY.toFixed(2)}, RotZ:${targetRotationZ.toFixed(2)}`);
-    
-    // Convert to a string once to make the if-statements cleaner
-    const rotYStr = targetRotationY.toFixed(2);
-    const rotXStr = targetRotationX.toFixed(2);
-    const rotZStr = targetRotationZ.toFixed(2);
-    
-
-    if (rotYStr === "-1.57") {
-        // Facing East
-        cameraHolder.position.set(targetX, 6.5, targetZ + 1);
-        cameraHolder.rotation.y = targetRotationY - Math.PI/2;
-    } 
-    else if (rotYStr === "1.57") {
-        // Facing West
-        cameraHolder.position.set(targetX, 6.5, targetZ - 1);
-        cameraHolder.rotation.y = targetRotationY - Math.PI/2;
-    } 
-    else if (rotYStr === "0.00" && rotYStr !== "-0.00") {
-        if (rotXStr === "0.00" && rotZStr === "0.00") {
-            // Facing North, perfectly aligned
-            cameraHolder.position.set(targetX + 1, 6.5, targetZ); 
-            cameraHolder.rotation.y = targetRotationY - Math.PI/2; 
-        } else if (rotXStr === "3.14" || rotZStr === "-3.14") {
-            // Facing North but with some weird tilt (like the cafe chairs)
-            cameraHolder.position.set(targetX - 1, 6.5, targetZ); 
-            cameraHolder.rotation.y = targetRotationY + Math.PI/2; 
-        }
-    }
-    else {
-        // console.log(`⚠️ Unhandled chair rotation for ${name} at X:${targetX.toFixed(2)}, Z:${targetZ.toFixed(2)}, RotY:${rotStr}. Defaulting to facing North logic.`);
-        if (rotXStr === "0.00" && rotXStr === "0.00") {
-                cameraHolder.position.set(targetX - 1, 6.5, targetZ);
-                cameraHolder.rotation.y = targetRotationY + Math.PI/2;
-            } else if (rotXStr === "-3.14" || rotZStr === "-3.14") {
-                cameraHolder.position.set(targetX + 1, 6.5, targetZ);
-                cameraHolder.rotation.y = targetRotationY - Math.PI/2;
-            } else {
-                console.warn(`⚠️ Unhandled chair rotation for ${name} at X:${targetX.toFixed(2)}, Z:${targetZ.toFixed(2)}. Defaulting to facing North logic.`);
-        }
-    }
-    playerGroup.rotation.y = cameraHolder.rotation.y;
-    // Your excellent animation logic
-    if (actionIdle) actionIdle.stop();
-    if (actionRun) actionRun.stop();
-    if (actionSit) {
-        actionSit.reset();
-        actionSit.setLoop(THREE.LoopOnce, 1);
-        actionSit.clampWhenFinished = true;
-        actionSit.play();
-    }
-}
-
-// Stand up / resume running: restore camera and animations
-function standUp() {
-    if (!isSitting) return;
-    isSitting = false;
-    inCafe = false;
-
-    // Free the chair we occupied (if any)
-    if (currentChair) {
-        // Ensure we clear the canonical chair object stored in allGameChairs
-        const idx = allGameChairs.findIndex(c => c.name === currentChair.name);
-        if (idx !== -1) allGameChairs[idx].isOccupied = false;
-        // Also clear any direct reference
-        currentChair.isOccupied = false;
-        currentChair = null;
-    }
-
-    // Restore saved camera pose if available
-    if (_savedCameraPos && _savedCameraQuat) {
-        cameraHolder.position.copy(_savedCameraPos);
-        cameraHolder.quaternion.copy(_savedCameraQuat);
-        playerGroup.position.copy(cameraHolder.position);
-        playerGroup.rotation.y = cameraHolder.rotation.y;
-    }
-
-    // Stop sitting animation
-    if (actionSit) actionSit.stop();
-
-    // Choose idle or run based on movement keys
-    // const moving = keys['w'] || keys['a'] || keys['s'] || keys['d'] || keys['arrowup'] || keys['arrowdown'] || keys['arrowleft'] || keys['arrowright'];
-    // if (moving) {
-    //     if (actionRun) actionRun.play();
-    // } else {
-    //     if (actionIdle) actionIdle.play();
-    // }
-
-    // Clear saved pose
-    _savedCameraPos = null;
-    _savedCameraQuat = null;
-}
-
-// Exit the current room (plaza/park) so the player can leave by walking
-function exitRoom() {
-    if (!insideRoom) return;
-    console.log(`🚪 Exiting ${insideRoom.name}`);
-    insideRoom = null;
-    highlightedRoom = null;
-    inCafe = false;
-}
+// moved sit/stand/exit helpers into ./movement.js; import and use those functions
 
 // if (enterCafeBtn) {
 //     enterCafeBtn.addEventListener('click', () => {
@@ -286,7 +180,7 @@ function drawDebugBoxes() {
 }
 
 // Uncomment to visualize collision boxes
-drawDebugBoxes();
+// drawDebugBoxes();
 
 // --- GAME LOOP ---
 function animate() {
@@ -442,7 +336,12 @@ window.addEventListener('keydown', (event) => {
                             closestChair.isOccupied = true;
                             currentChair = closestChair;
                             insideRoom = roomToEnter;
-                            sitOnChair(closestChair.name, closestChair.x, closestChair.z, closestChair.rotation.y, closestChair.rotation.x, closestChair.rotation.z);
+                            const _saved = sitOnChair(cameraHolder, playerGroup, { actionIdle, actionRun, actionSit }, closestChair.name, closestChair.x, closestChair.z, (closestChair.rotation && closestChair.rotation.y) || 0, (closestChair.rotation && closestChair.rotation.x) || 0, (closestChair.rotation && closestChair.rotation.z) || 0);
+                            if (_saved) {
+                                _savedCameraPos = _saved._savedCameraPos;
+                                _savedCameraQuat = _saved._savedCameraQuat;
+                                isSitting = _saved.isSitting;
+                            }
                             if (promptUI) promptUI.style.display = 'none';
                             return;
                         }
@@ -489,9 +388,19 @@ window.addEventListener('keydown', (event) => {
         // If sitting, stand up (this will also free the chair)
         if (isSitting) {
             console.log('🔓 Standing up and resuming movement');
-            standUp();
+            const _res = standUp(cameraHolder, playerGroup, { actionIdle, actionRun, actionSit }, currentChair, allGameChairs, _savedCameraPos, _savedCameraQuat);
+            isSitting = _res.isSitting;
+            inCafe = _res.inCafe;
+            currentChair = _res.currentChair;
+            _savedCameraPos = _res._savedCameraPos;
+            _savedCameraQuat = _res._savedCameraQuat;
             // after standing, also exit the room if desired
-            if (insideRoom) exitRoom();
+            if (insideRoom) {
+                const _r = exitRoom(insideRoom);
+                insideRoom = _r.insideRoom;
+                highlightedRoom = _r.highlightedRoom;
+                inCafe = _r.inCafe;
+            }
             return;
         }
 
@@ -505,7 +414,10 @@ window.addEventListener('keydown', (event) => {
             }
             _savedCameraPos = null;
             _savedCameraQuat = null;
-            exitRoom();
+            const _r2 = exitRoom(insideRoom);
+            insideRoom = _r2.insideRoom;
+            highlightedRoom = _r2.highlightedRoom;
+            inCafe = _r2.inCafe;
             return;
         }
 

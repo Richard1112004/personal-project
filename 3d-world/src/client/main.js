@@ -46,11 +46,30 @@ let actionSit = null;
 let isMoving = false;
 let isSitting = false;
 let inCafe = false;
-let targetTablePos = new THREE.Vector3(); // Memory for the exact X, Y, Z
-let isTargetReady = false; // A switch so we don't teleport before it loads
+// let targetTablePos = new THREE.Vector3(); // Memory for the exact X, Y, Z
+// let isTargetReady = false; // A switch so we don't teleport before it loads
 let _savedCameraPos = null;
 let _savedCameraQuat = null;
 let currentChair = null; // currently occupied chair object from allGameChairs
+let highlightedRoom = null; // room currently shown in the promptUI
+let insideRoom = null; // the room the player has entered (must press 'O' to exit)
+// Compute map-wide bounding box from ROOMS so player can't leave the map
+let mapBounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+if (Array.isArray(ROOMS) && ROOMS.length > 0) {
+    for (const r of ROOMS) {
+        if (typeof r.minX === 'number') mapBounds.minX = Math.min(mapBounds.minX, r.minX);
+        if (typeof r.maxX === 'number') mapBounds.maxX = Math.max(mapBounds.maxX, r.maxX);
+        if (typeof r.minZ === 'number') mapBounds.minZ = Math.min(mapBounds.minZ, r.minZ);
+        if (typeof r.maxZ === 'number') mapBounds.maxZ = Math.max(mapBounds.maxZ, r.maxZ);
+    }
+    // add a small margin so the edges aren't flush
+    const MARGIN = 5;
+    mapBounds.minX -= MARGIN; mapBounds.maxX += MARGIN;
+    mapBounds.minZ -= MARGIN; mapBounds.maxZ += MARGIN;
+} else {
+    // sensible defaults if ROOMS are not available
+    mapBounds = { minX: -200, maxX: 200, minZ: -200, maxZ: 200 };
+}
 
 // Build building boundaries from ROOMS (they include min/max fields)
 // const buildingBoundaries = ROOMS.map(r => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ }));
@@ -175,6 +194,10 @@ function standUp() {
 
     // Free the chair we occupied (if any)
     if (currentChair) {
+        // Ensure we clear the canonical chair object stored in allGameChairs
+        const idx = allGameChairs.findIndex(c => c.name === currentChair.name);
+        if (idx !== -1) allGameChairs[idx].isOccupied = false;
+        // Also clear any direct reference
         currentChair.isOccupied = false;
         currentChair = null;
     }
@@ -191,16 +214,25 @@ function standUp() {
     if (actionSit) actionSit.stop();
 
     // Choose idle or run based on movement keys
-    const moving = keys['w'] || keys['a'] || keys['s'] || keys['d'] || keys['arrowup'] || keys['arrowdown'] || keys['arrowleft'] || keys['arrowright'];
-    if (moving) {
-        if (actionRun) actionRun.play();
-    } else {
-        if (actionIdle) actionIdle.play();
-    }
+    // const moving = keys['w'] || keys['a'] || keys['s'] || keys['d'] || keys['arrowup'] || keys['arrowdown'] || keys['arrowleft'] || keys['arrowright'];
+    // if (moving) {
+    //     if (actionRun) actionRun.play();
+    // } else {
+    //     if (actionIdle) actionIdle.play();
+    // }
 
     // Clear saved pose
     _savedCameraPos = null;
     _savedCameraQuat = null;
+}
+
+// Exit the current room (plaza/park) so the player can leave by walking
+function exitRoom() {
+    if (!insideRoom) return;
+    console.log(`🚪 Exiting ${insideRoom.name}`);
+    insideRoom = null;
+    highlightedRoom = null;
+    inCafe = false;
 }
 
 // if (enterCafeBtn) {
@@ -234,6 +266,23 @@ function drawDebugBoxes() {
         
         scene.add(debugMesh);
     });
+
+    // Draw full-map bounds (from mapBounds)
+    try {
+        const mb = mapBounds;
+        const corners = [
+            new THREE.Vector3(mb.minX, 0.1, mb.minZ),
+            new THREE.Vector3(mb.maxX, 0.1, mb.minZ),
+            new THREE.Vector3(mb.maxX, 0.1, mb.maxZ),
+            new THREE.Vector3(mb.minX, 0.1, mb.maxZ),
+        ];
+        const geom = new THREE.BufferGeometry().setFromPoints(corners.concat([corners[0]]));
+        const mat = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+        const line = new THREE.Line(geom, mat);
+        scene.add(line);
+    } catch (e) {
+        // ignore if mapBounds not ready
+    }
 }
 
 // Uncomment to visualize collision boxes
@@ -247,6 +296,7 @@ function animate() {
 
     if (controls.isLocked) {
         const { prevX, prevZ } = handlePlayerMovement(controls, playerGroup, cameraHolder, PLAYER_SPEED, isSitting);
+        let hitWall = false; // moved to top-level of locked-controls scope to avoid scope errors
 
         if (!isSitting) {
             // Support arrow keys for movement alongside WASD
@@ -268,6 +318,12 @@ function animate() {
                 if (actionRun) actionRun.stop();
                 if (actionIdle) actionIdle.play();
             }
+
+            // Global map bounds check: disallow leaving the entire map
+            if (cameraHolder.position.x < mapBounds.minX || cameraHolder.position.x > mapBounds.maxX ||
+                cameraHolder.position.z < mapBounds.minZ || cameraHolder.position.z > mapBounds.maxZ) {
+                hitWall = true;
+            }
         } else {
             // If sitting, ensure running is stopped and sit animation plays
             if (isMoving) {
@@ -288,16 +344,22 @@ function animate() {
         // --- PHYSICAL COLLISIONS (Solid Walls) ---
         // Only check collisions if we aren't sitting
         if (!isSitting) {
-            let hitWall = false;
-            
-            // Loop through every room to see if we stepped inside its box
-            for (let room of ROOMS) {
-                // We add a tiny 0.5 buffer so the camera doesn't clip inside the wall
-                if (cameraHolder.position.x > room.minX - 0.5 && cameraHolder.position.x < room.maxX + 0.5 &&
-                    cameraHolder.position.z > room.minZ - 0.5 && cameraHolder.position.z < room.maxZ + 0.5) {
-                    
-                    hitWall = true; 
-                    break; // Stop checking, we already hit something
+
+            if (!insideRoom) {
+                // Prevent entering rooms by walking — if the camera is inside any room box, treat as a wall hit
+                for (let room of ROOMS) {
+                    if (cameraHolder.position.x > room.minX - 0.5 && cameraHolder.position.x < room.maxX + 0.5 &&
+                        cameraHolder.position.z > room.minZ - 0.5 && cameraHolder.position.z < room.maxZ + 0.5) {
+                        hitWall = true;
+                        break;
+                    }
+                }
+            } else {
+                // Player is inside a room: prevent leaving its bounds
+                const room = insideRoom;
+                if (!(cameraHolder.position.x > room.minX - 0.5 && cameraHolder.position.x < room.maxX + 0.5 &&
+                      cameraHolder.position.z > room.minZ - 0.5 && cameraHolder.position.z < room.maxZ + 0.5)) {
+                    hitWall = true;
                 }
             }
 
@@ -309,34 +371,39 @@ function animate() {
         }
 
         // Proximity radar to show prompt
-        if (!inCafe && !isSitting && myAvatar) {
-            const avatarWorldPos = new THREE.Vector3();
-            myAvatar.getWorldPosition(avatarWorldPos);
-            let foundRoom = null;
-            
-            for (let room of ROOMS) {
-                // Instead of looking for a single door, we expand the building's walls
-                // by your RADAR_DISTANCE. If the avatar steps into this "halo", it triggers!
-                if (avatarWorldPos.x > room.minX - RADAR_DISTANCE && 
-                    avatarWorldPos.x < room.maxX + RADAR_DISTANCE &&
-                    avatarWorldPos.z > room.minZ - RADAR_DISTANCE && 
-                    avatarWorldPos.z < room.maxZ + RADAR_DISTANCE) {
-                    
-                    foundRoom = room; 
-                    break; 
+        if (myAvatar) {
+            // If the player is inside a room or sitting, show exit prompt
+            if (insideRoom || inCafe || isSitting) {
+                promptUI.innerText = `Press O to get out of`;
+                promptUI.style.display = 'block';
+                highlightedRoom = null;
+            } else {
+                const avatarWorldPos = new THREE.Vector3();
+                myAvatar.getWorldPosition(avatarWorldPos);
+                let foundRoom = null;
+
+                for (let room of ROOMS) {
+                    // Instead of looking for a single door, we expand the building's walls
+                    // by your RADAR_DISTANCE. If the avatar steps into this "halo", it triggers!
+                    if (avatarWorldPos.x > room.minX - RADAR_DISTANCE && 
+                        avatarWorldPos.x < room.maxX + RADAR_DISTANCE &&
+                        avatarWorldPos.z > room.minZ - RADAR_DISTANCE && 
+                        avatarWorldPos.z < room.maxZ + RADAR_DISTANCE) {
+                        foundRoom = room; 
+                        break; 
+                    }
+                }
+
+                if (foundRoom) {
+                    // remember the room we highlighted so the key handler can act on it
+                    highlightedRoom = foundRoom;
+                    promptUI.innerText = `Press E to enter ${foundRoom.name} (${foundRoom.currentOccupied}/${foundRoom.maxChairs})`;
+                    promptUI.style.display = 'block';
+                } else {
+                    promptUI.style.display = 'none';
+                    highlightedRoom = null;
                 }
             }
-            
-            if (foundRoom) {
-                // If it's a park or plaza, you might not want to show chair counts, 
-                // but this keeps your original formatting!
-                promptUI.innerText = `Press E to enter ${foundRoom.name} (${foundRoom.currentOccupied}/${foundRoom.maxChairs})`;
-                promptUI.style.display = 'block';
-            } else {
-                promptUI.style.display = 'none';
-            }
-        } else {
-            if (promptUI) promptUI.style.display = 'none';
         }
     }
 
@@ -347,59 +414,60 @@ function animate() {
 window.addEventListener('keydown', (event) => {
     // 1. Did the browser even hear the key?
     if (event.key.toLowerCase() === 'e') {
-        // console.log("👉 'E' key detected! Checking the gatekeepers...");
         
-        // // 2. Print the exact status of all 4 locks
-        // console.log(`🔒 Pointer Locked (Can move)? : ${controls.isLocked}`);
-        // console.log(`🪑 Already Sitting?          : ${isSitting}`);
-        // console.log(`☕ In Cafe Mode?            : ${inCafe}`);
-        // console.log(`🧍 Avatar Loaded?           : ${!!myAvatar}`);
-
-        // 3. The original logic
         if (controls.isLocked) {
             if (!isSitting && !inCafe && myAvatar) {
                 
                 const avatarPos = new THREE.Vector3();
                 myAvatar.getWorldPosition(avatarPos);
-                
-                let closestChair = null;
-                let closestDistance = Infinity;
-                // console.log(`📡 Scanning for chairs within ${RADAR_DISTANCE} units...`);
-                for (let chair of allGameChairs) {
-                // console.log(`Checking ${chair.name} at X:${chair.x.toFixed(2)}, Z:${chair.z.toFixed(2)} (Occupied: ${chair.isOccupied})`);      
-                    if (!chair.isOccupied) {
-                        // console.log(`Checking ${chair.name} at X:${chair.x.toFixed(2)}, Z:${chair.z.toFixed(2)}`);
-                        const distance = Math.sqrt(
-                            Math.pow(avatarPos.x - chair.x, 2) + 
-                            Math.pow(avatarPos.z - chair.z, 2)
-                        );
 
-                        if (distance < closestDistance) {
-                            closestDistance = distance;
-                            closestChair = chair;
+                // If we highlighted a room in the HUD, use that to enter
+                if (highlightedRoom) {
+                    const roomToEnter = highlightedRoom;
+
+                    // If the room has chairs, try to sit in the nearest free chair inside its bounds
+                    if (roomToEnter.maxChairs && roomToEnter.maxChairs > 0) {
+                        let closestChair = null;
+                        let closestDistance = Infinity;
+                        for (let chair of allGameChairs) {
+                            if (!chair.isOccupied && chair.x > roomToEnter.minX && chair.x < roomToEnter.maxX && chair.z > roomToEnter.minZ && chair.z < roomToEnter.maxZ) {
+                                const distance = Math.hypot(avatarPos.x - chair.x, avatarPos.z - chair.z);
+                                if (distance < closestDistance) { closestDistance = distance; closestChair = chair; }
+                            }
+                        }
+
+                        if (closestChair && closestDistance < 10) {
+                            console.log(`✅ SUCCESS! Sitting in ${closestChair.name}!`);
+                            inCafe = true;
+                            closestChair.isOccupied = true;
+                            currentChair = closestChair;
+                            insideRoom = roomToEnter;
+                            sitOnChair(closestChair.name, closestChair.x, closestChair.z, closestChair.rotation.y, closestChair.rotation.x, closestChair.rotation.z);
+                            if (promptUI) promptUI.style.display = 'none';
+                            return;
                         }
                     }
+                    else {
+                        let centerX = (roomToEnter.minX + roomToEnter.maxX) / 2;
+                        let centerZ = (roomToEnter.minZ + roomToEnter.maxZ) / 2;
+                        // clamp center to map bounds
+                        centerX = Math.max(mapBounds.minX + 1, Math.min(mapBounds.maxX - 1, centerX));
+                        centerZ = Math.max(mapBounds.minZ + 1, Math.min(mapBounds.maxZ - 1, centerZ));
+                        console.log(`🚪 Entering ${roomToEnter.name} at center.`);
+                        _savedCameraPos = cameraHolder.position.clone();
+                        _savedCameraQuat = cameraHolder.quaternion.clone();
+                        cameraHolder.position.set(centerX, 6, centerZ);
+                        insideRoom = roomToEnter;
+                        if (promptUI) promptUI.style.display = 'none';
+                    }
+
+                    // No available chair (or room has no chairs): teleport to room center and mark inside
+                   
+                    return;
                 }
 
-                // console.log(`🤖 DEBUG RADAR:`);
-                // console.log(`My GPS: X=${avatarPos.x.toFixed(2)}, Z=${avatarPos.z.toFixed(2)}`);
-                // if (closestChair) {
-                //     console.log(`Target: ${closestChair.name} at X=${closestChair.x.toFixed(2)}, Z=${closestChair.z.toFixed(2)}`);
-                //     console.log(`Math Distance: ${closestDistance.toFixed(2)} units away.`);
-                // }
+                console.log("❌ FAILED: No highlighted room to enter.");
 
-                if (closestChair && closestDistance < 10) {
-                    console.log(`✅ SUCCESS! Sitting in ${closestChair.name}!`);
-                    inCafe = true;
-                    closestChair.isOccupied = true;
-                    // remember which chair we occupied so we can free it when standing
-                    currentChair = closestChair;
-                    // console.log("clossestChair.rotation x:", closestChair.rotation.x.toFixed(2), "y:", closestChair.rotation.y.toFixed(2), "z:", closestChair.rotation.z.toFixed(2));
-                    sitOnChair(closestChair.name, closestChair.x, closestChair.z, closestChair.rotation.y, closestChair.rotation.x, closestChair.rotation.z); 
-                    if (promptUI) promptUI.style.display = 'none';
-                } else {
-                    console.log("❌ FAILED: Still too far away.");
-                }
             } else {
                 console.warn("⛔ BLOCKED: You are either already sitting, in the cafe, or the Avatar hasn't loaded yet!");
             }
@@ -418,12 +486,30 @@ window.addEventListener('keydown', (event) => {
 // Press 'O' to stand up / resume running when sitting
 window.addEventListener('keydown', (event) => {
     if (event.key.toLowerCase() === 'o') {
-        if (!isSitting) {
-            console.warn('⛔ You are not sitting.');
+        // If sitting, stand up (this will also free the chair)
+        if (isSitting) {
+            console.log('🔓 Standing up and resuming movement');
+            standUp();
+            // after standing, also exit the room if desired
+            if (insideRoom) exitRoom();
             return;
         }
-        console.log('🔓 Standing up and resuming movement');
-        standUp();
+
+        // Not sitting: if we're inside a room (plaza/park), pressing O exits it
+        if (insideRoom) {
+            if (_savedCameraPos && _savedCameraQuat) {
+                cameraHolder.position.copy(_savedCameraPos);
+                cameraHolder.quaternion.copy(_savedCameraQuat);
+                playerGroup.position.copy(cameraHolder.position);
+                playerGroup.rotation.y = cameraHolder.rotation.y;
+            }
+            _savedCameraPos = null;
+            _savedCameraQuat = null;
+            exitRoom();
+            return;
+        }
+
+        console.warn('⛔ You are not sitting and not inside a room.');
     }
 });
 animate();

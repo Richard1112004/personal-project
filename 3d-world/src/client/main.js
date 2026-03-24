@@ -7,6 +7,7 @@ import { updateCamera } from './camera.js';
 import { handlePlayerMovement, keys, sitOnChair, standUp, exitRoom } from './movement.js';
 import { setupEnvironment } from './environment.js';
 import { createLoaderAndClock, loadBuilding, loadAvatar, allGameChairs } from './loader.js';
+import { joinRoom, leaveRoom, toggleMute as voiceToggleMute } from './voice.js';
 
 // --- INITIALIZE SCENE & RENDERER ---
 const scene = new THREE.Scene();
@@ -348,6 +349,8 @@ window.addEventListener('keydown', (event) => {
                             closestChair.isOccupied = true;
                             currentChair = closestChair;
                             insideRoom = roomToEnter;
+                            // join voice room when entering
+                            try { joinRoom(roomToEnter.name); } catch (e) { console.warn(e); }
                             const _saved = sitOnChair(cameraHolder, playerGroup, { actionIdle, actionRun, actionSit }, closestChair.name, closestChair.x, closestChair.z, (closestChair.rotation && closestChair.rotation.y) || 0, (closestChair.rotation && closestChair.rotation.x) || 0, (closestChair.rotation && closestChair.rotation.z) || 0);
                             if (_saved) {
                                 _savedCameraPos = _saved._savedCameraPos;
@@ -369,6 +372,8 @@ window.addEventListener('keydown', (event) => {
                         _savedCameraQuat = cameraHolder.quaternion.clone();
                         cameraHolder.position.set(centerX, 6, centerZ);
                         insideRoom = roomToEnter;
+                        // join voice room when entering
+                        try { joinRoom(roomToEnter.name); } catch (e) { console.warn(e); }
                         if (promptUI) promptUI.style.display = 'none';
                     }
 
@@ -394,6 +399,13 @@ window.addEventListener('keydown', (event) => {
     }
 });
 
+// Press 'M' to toggle microphone via voice client
+window.addEventListener('keydown', (event) => {
+    if (event.key.toLowerCase() === 'm') {
+        try { voiceToggleMute(); } catch (e) { console.warn(e); }
+    }
+});
+
 // Press 'O' to stand up / resume running when sitting
 window.addEventListener('keydown', (event) => {
     if (event.key.toLowerCase() === 'o') {
@@ -408,10 +420,12 @@ window.addEventListener('keydown', (event) => {
             _savedCameraQuat = _res._savedCameraQuat;
             // after standing, also exit the room if desired
             if (insideRoom) {
+                const prevName = insideRoom.name;
                 const _r = exitRoom(insideRoom);
                 insideRoom = _r.insideRoom;
                 highlightedRoom = _r.highlightedRoom;
                 inCafe = _r.inCafe;
+                try { if (prevName) leaveRoom(prevName); } catch (e) { console.warn(e); }
             }
             return;
         }
@@ -426,10 +440,12 @@ window.addEventListener('keydown', (event) => {
             }
             _savedCameraPos = null;
             _savedCameraQuat = null;
+            const prevName = insideRoom.name;
             const _r2 = exitRoom(insideRoom);
             insideRoom = _r2.insideRoom;
             highlightedRoom = _r2.highlightedRoom;
             inCafe = _r2.inCafe;
+            try { if (prevName) leaveRoom(prevName); } catch (e) { console.warn(e); }
             return;
         }
 

@@ -267,11 +267,16 @@ function animate() {
         // Proximity radar to show prompt
         if (myAvatar) {
             // If the player is inside a room or sitting, show exit prompt
-            if (insideRoom || inCafe || isSitting) {
-                promptUI.innerText = `Press O to get out of`;
-                promptUI.style.display = 'block';
-                highlightedRoom = null;
-            } else {
+                    if (insideRoom || inCafe || isSitting) {
+                        if (promptUI) {
+                            const main = promptUI.querySelector('.prompt-main');
+                            const muteHint = document.getElementById('muteHint');
+                            if (main) main.innerText = `Press O to get out of`;
+                            if (muteHint) muteHint.style.display = 'block';
+                            promptUI.style.display = 'block';
+                        }
+                        highlightedRoom = null;
+                    } else {
                 const avatarWorldPos = new THREE.Vector3();
                 myAvatar.getWorldPosition(avatarWorldPos);
                 let foundRoom = null;
@@ -291,10 +296,17 @@ function animate() {
                 if (foundRoom) {
                     // remember the room we highlighted so the key handler can act on it
                     highlightedRoom = foundRoom;
-                    promptUI.innerText = `Press E to enter ${foundRoom.name} (${foundRoom.currentOccupied}/${foundRoom.maxChairs})`;
-                    promptUI.style.display = 'block';
+                    if (promptUI) {
+                        const main = promptUI.querySelector('.prompt-main');
+                        const muteHint = document.getElementById('muteHint');
+                        if (main) main.innerText = `Press E to enter ${foundRoom.name} (${foundRoom.currentOccupied}/${foundRoom.maxChairs})`;
+                        if (muteHint) muteHint.style.display = 'none';
+                        promptUI.style.display = 'block';
+                    }
                 } else {
                     promptUI.style.display = 'none';
+                    const muteHint = document.getElementById('muteHint');
+                    if (muteHint) muteHint.style.display = 'none';
                     highlightedRoom = null;
                 }
             }

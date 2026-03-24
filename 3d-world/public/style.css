@@ -19,3 +19,7 @@ body { margin: 0; overflow: hidden; background-color: #0b0c10; font-family: sans
     padding: 15px 30px; font-size: 24px; font-weight: bold; 
     border-radius: 8px; z-index: 100; pointer-events: none; border: 2px solid white;
 }
+
+#interactionPrompt .prompt-main { display: block; }
+#interactionPrompt .prompt-sub { display: block; margin-top: 8px; font-size: 14px; color: #c5c6c7; font-weight: 600; }
+#muteHint { color: #ffd966; }

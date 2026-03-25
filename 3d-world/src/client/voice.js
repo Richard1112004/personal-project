@@ -77,13 +77,10 @@ function toggleMute() {
 async function joinRoom(roomId) {
     if (!socket) {
         // Prefer explicit override, then same origin, then fallback to the ngrok URL
-        const url = "https://e58a-14-169-92-187.ngrok-free.app";
+        const url = "http://localhost:3000";
         socket = io(url, { 
             // 2. Polling first to bypass the Ngrok warning
             transports: ['polling', 'websocket'], 
-            extraHeaders: {
-                "ngrok-skip-browser-warning": "true"
-            }
         });
 
         // Connection diagnostics to help debug failed websocket upgrades
@@ -167,5 +164,29 @@ function leaveRoom(roomId) {
         const audioEl = document.getElementById(`audio-${id}`); if (audioEl) audioEl.remove();
     }
 }
+// --- NEW FUNCTION IN voice.js ---
+function registerUser(username, password, callback) {
+    if (!socket) {
+        // Use your active Ngrok link!
+        const url = 'http://localhost:3000'; 
+        socket = io(url, { 
+            transports: ['polling', 'websocket'],
+            // extraHeaders: { "ngrok-skip-browser-warning": "true" }
+        });
+    }
 
-export { joinRoom, leaveRoom, toggleMute };
+    // Listen for the server's reply (Success or Error)
+    socket.once('register-success', (userData) => {
+        callback({ success: true, user: userData });
+    });
+
+    socket.once('error-msg', (msg) => {
+        callback({ success: false, message: msg });
+    });
+
+    // Send the data to server.js
+    socket.emit('register-user', { username, password });
+}
+
+// IMPORTANT: Update your export at the very bottom!
+export { joinRoom, leaveRoom, toggleMute, registerUser };

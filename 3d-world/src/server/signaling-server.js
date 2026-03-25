@@ -2,7 +2,6 @@ const io = require("socket.io")(3000, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"],
-        allowedHeaders: ["ngrok-skip-browser-warning"] // 
     }
 });
 

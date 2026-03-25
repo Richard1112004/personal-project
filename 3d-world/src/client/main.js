@@ -7,7 +7,7 @@ import { updateCamera } from './camera.js';
 import { handlePlayerMovement, keys, sitOnChair, standUp, exitRoom } from './movement.js';
 import { setupEnvironment } from './environment.js';
 import { createLoaderAndClock, loadBuilding, loadAvatar, allGameChairs } from './loader.js';
-import { joinRoom, leaveRoom, toggleMute as voiceToggleMute } from './voice.js';
+import { joinRoom, leaveRoom, toggleMute as voiceToggleMute, registerUser } from './voice.js';
 
 // --- INITIALIZE SCENE & RENDERER ---
 const scene = new THREE.Scene();
@@ -100,6 +100,54 @@ tabRegister.addEventListener('click', () => {
     formTitle.innerText = "Create Account";
     formSubtitle.innerText = "Sign up to customize your avatar.";
     submitBtn.innerText = "Register";
+});
+// --- HTML FORM SUBMISSION (TESTING REGISTER) ---
+const authForm = document.getElementById('auth-form');
+const usernameInput = document.getElementById('username');
+const passwordInput = document.getElementById('password');
+const errorMsg = document.getElementById('error-message');
+
+authForm.addEventListener('submit', (e) => {
+    e.preventDefault(); // Stops the browser from reloading the page
+
+    const user = usernameInput.value.trim();
+    const pass = passwordInput.value;
+
+    if (!user || !pass) {
+        errorMsg.innerText = "Please fill in all fields.";
+        return;
+    }
+
+    // We only want to test Registration right now
+    if (isRegistering) {
+        submitBtn.innerText = "Registering...";
+        errorMsg.innerText = ""; 
+
+        registerUser(user, pass, (response) => {
+            if (response.success) {
+                // Make the text green/blue to show success
+                errorMsg.style.color = "#4facfe"; 
+                errorMsg.innerText = "✅ Success! Account created.";
+                submitBtn.innerText = "Register";
+                console.log("Registered:", response.user.username);
+                
+                // Automatically switch back to the Login tab
+                setTimeout(() => {
+                    tabLogin.click();
+                    errorMsg.innerText = "";
+                    errorMsg.style.color = "#ff6b6b"; // reset color
+                }, 1500);
+
+            } else {
+                // Show the error from the server (e.g., "Username taken")
+                errorMsg.style.color = "#ff6b6b";
+                errorMsg.innerText = "❌ " + response.message;
+                submitBtn.innerText = "Register";
+            }
+        });
+    } else {
+        errorMsg.innerText = "⚠️ Please click the 'Register' tab to test creating an account first!";
+    }
 });
 setupEnvironment(scene);
 

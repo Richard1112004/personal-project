@@ -1,9 +1,11 @@
 // 1. Load environment variables first
 require('dotenv').config();
+const User = require('./user'); // <-- ADD THIS
 const mongoose = require('mongoose');
 const io = require("socket.io")(3000, {
     cors: {
-        origin: "*", 
+        // Explicitly allow your local Vite server to connect
+        origin: ["http://127.0.0.1:5500", "http://localhost:5500"], 
         methods: ["GET", "POST"]
     }
 });

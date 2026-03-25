@@ -7,7 +7,7 @@ import { updateCamera } from './camera.js';
 import { handlePlayerMovement, keys, sitOnChair, standUp, exitRoom } from './movement.js';
 import { setupEnvironment } from './environment.js';
 import { createLoaderAndClock, loadBuilding, loadAvatar, allGameChairs } from './loader.js';
-import { joinRoom, leaveRoom, toggleMute as voiceToggleMute, registerUser } from './voice.js';
+import { joinRoom, leaveRoom, toggleMute as voiceToggleMute, registerUser, loginUser } from './voice.js';
 
 // --- INITIALIZE SCENE & RENDERER ---
 const scene = new THREE.Scene();
@@ -33,9 +33,32 @@ scene.add(cameraHolder);
 // UI: blocker / instructions to engage pointer lock
 const blocker = document.getElementById('blocker');
 const instructions = document.getElementById('instructions');
-if (instructions) instructions.addEventListener('click', () => controls.lock());
+// global auth flag (defaults to false)
+window.isUserAuthenticated = window.isUserAuthenticated || false;
+if (instructions) instructions.addEventListener('click', () => {
+    if (window.isUserAuthenticated) controls.lock();
+});
 controls.addEventListener('lock', () => { if (blocker) blocker.style.display = 'none'; });
 controls.addEventListener('unlock', () => { if (blocker) blocker.style.display = 'flex'; });
+
+// Called when authentication is complete (login or auto-login)
+function authSuccess() {
+    window.isUserAuthenticated = true;
+    // Ensure blocker/instructions are visible and functional
+    try {
+        if (blocker) blocker.style.display = 'flex';
+        if (instructions) instructions.style.display = '';
+    } catch (e) {}
+
+    // Fade out and remove overlay if present
+    const overlay = document.getElementById('login-overlay');
+    if (overlay) {
+        overlay.style.transition = 'opacity 220ms ease';
+        overlay.style.opacity = '0';
+        overlay.style.pointerEvents = 'none';
+        setTimeout(() => { try { overlay.remove(); } catch (e) {} }, 260);
+    }
+}
 
 // --- ASSET LOADER & ANIMATION ---
 const { loader, clock } = createLoaderAndClock();
@@ -146,7 +169,22 @@ authForm.addEventListener('submit', (e) => {
             }
         });
     } else {
-        errorMsg.innerText = "⚠️ Please click the 'Register' tab to test creating an account first!";
+        // Attempt login using the socket login flow
+        submitBtn.innerText = "Entering...";
+        errorMsg.innerText = "";
+
+        loginUser(user, pass, (res) => {
+            submitBtn.innerText = "Enter World";
+            if (res.success) {
+                errorMsg.style.color = "#4facfe";
+                errorMsg.innerText = `✅ Welcome ${res.user.username}! Choose a room to enter.`;
+                // Run auth success flow (fade/remove overlay, enable input)
+                authSuccess();
+            } else {
+                errorMsg.style.color = "#ff6b6b";
+                errorMsg.innerText = "❌ " + (res.message || 'Login failed');
+            }
+        });
     }
 });
 setupEnvironment(scene);

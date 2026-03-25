@@ -1,8 +1,16 @@
 import * as THREE from 'three';
 
 export const keys = {};
-window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
-window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+// Only update movement keys when the user is authenticated
+window.isUserAuthenticated = window.isUserAuthenticated || false;
+window.addEventListener('keydown', (e) => {
+    if (!window.isUserAuthenticated) return;
+    keys[e.key.toLowerCase()] = true;
+});
+window.addEventListener('keyup', (e) => {
+    if (!window.isUserAuthenticated) return;
+    keys[e.key.toLowerCase()] = false;
+});
 
 export function handlePlayerMovement(controls, playerGroup, cameraHolder, speed, isSitting = false) {
     const prevX = cameraHolder.position.x;

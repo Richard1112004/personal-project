@@ -6,6 +6,7 @@ let localStream = null;
 let isMuted = false;
 const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 let socket = null;
+let hasAttachedListeners = false;
 
 function addLog(msg) {
     let logDiv = document.getElementById('voiceLog');
@@ -75,20 +76,19 @@ function toggleMute() {
 }
 
 async function joinRoom(roomId) {
+    // 1. Ensure socket exists (it should, from the login screen)
     if (!socket) {
-        // Prefer explicit override, then same origin, then fallback to the ngrok URL
-        const url = "http://localhost:3000";
-        socket = io(url, { 
-            // 2. Polling first to bypass the Ngrok warning
-            transports: ['polling', 'websocket'], 
-        });
+        const url = 'http://localhost:3000';
+        socket = io(url, { transports: ['websocket', 'polling'] });
+    }
 
-        // Connection diagnostics to help debug failed websocket upgrades
+    // 2. Attach the WebRTC "ears" exactly once!
+    if (!hasAttachedListeners) {
+        hasAttachedListeners = true;
+
         socket.on('connect', () => addLog(`Socket connected: ${socket.id}`));
-        socket.on('connect_error', (err) => addLog(`connect_error: ${err && err.message ? err.message : err}`));
-        socket.on('error', (err) => addLog(`socket error: ${err && err.message ? err.message : err}`));
-        socket.on('reconnect_attempt', () => addLog('reconnect attempt'));
-        socket.on('reconnect_failed', () => addLog('reconnect failed'));
+        socket.on('connect_error', (err) => addLog(`connect_error: ${err.message}`));
+        
         socket.on('user-joined', async (newUserId) => {
             const delay = Math.floor(Math.random() * 2400) + 100;
             addLog(`Signal: ${newUserId} joined, waiting ${delay}ms`);
@@ -139,11 +139,10 @@ async function joinRoom(roomId) {
             if (audioEl) audioEl.remove();
         });
 
-        socket.on('room-full', (room) => {
-            addLog(`Room ${room} is full`);
-        });
+        socket.on('room-full', (room) => addLog(`Room ${room} is full`));
     }
 
+    // 3. Now actually join the voice chat
     const ok = await startCapture();
     if (!ok) return false;
     socket.emit('join-room', roomId);
@@ -188,5 +187,21 @@ function registerUser(username, password, callback) {
     socket.emit('register-user', { username, password });
 }
 
+function loginUser(username, password, callback) {
+    if (!socket) {
+        const url = 'http://localhost:3000';
+        socket = io(url, { transports: ['polling', 'websocket'] });
+        // basic connect handlers
+        socket.on('connect', () => addLog(`Socket connected: ${socket.id}`));
+        socket.on('connect_error', (err) => addLog(`connect_error: ${err && err.message ? err.message : err}`));
+    }
+
+    socket.once('login-success', (userData) => callback({ success: true, user: userData }));
+    socket.once('login-failed', (msg) => callback({ success: false, message: msg }));
+    socket.once('error-msg', (msg) => callback({ success: false, message: msg }));
+
+    socket.emit('login-user', { username, password });
+}
+
 // IMPORTANT: Update your export at the very bottom!
-export { joinRoom, leaveRoom, toggleMute, registerUser };
+export { joinRoom, leaveRoom, toggleMute, registerUser, loginUser };

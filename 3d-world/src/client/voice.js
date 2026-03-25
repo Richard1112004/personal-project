@@ -76,10 +76,22 @@ function toggleMute() {
 
 async function joinRoom(roomId) {
     if (!socket) {
-        const host = location.hostname || 'localhost';
-        const url = `https://aa9a-14-169-49-161.ngrok-free.app`;
-        socket = io(url, { transports: ['websocket'] });
+        // Prefer explicit override, then same origin, then fallback to the ngrok URL
+        const url = "https://e58a-14-169-92-187.ngrok-free.app";
+        socket = io(url, { 
+            // 2. Polling first to bypass the Ngrok warning
+            transports: ['polling', 'websocket'], 
+            extraHeaders: {
+                "ngrok-skip-browser-warning": "true"
+            }
+        });
 
+        // Connection diagnostics to help debug failed websocket upgrades
+        socket.on('connect', () => addLog(`Socket connected: ${socket.id}`));
+        socket.on('connect_error', (err) => addLog(`connect_error: ${err && err.message ? err.message : err}`));
+        socket.on('error', (err) => addLog(`socket error: ${err && err.message ? err.message : err}`));
+        socket.on('reconnect_attempt', () => addLog('reconnect attempt'));
+        socket.on('reconnect_failed', () => addLog('reconnect failed'));
         socket.on('user-joined', async (newUserId) => {
             const delay = Math.floor(Math.random() * 2400) + 100;
             addLog(`Signal: ${newUserId} joined, waiting ${delay}ms`);

@@ -83,7 +83,7 @@ setupEnvironment(scene);
 // Load environment and avatar
 // loader.load('../../public/assets/models/scene.glb', (gltf) => scene.add(gltf.scene));
 
-loadBuilding(loader, scene, 'scene (1).glb', -40, 0, 3);
+loadBuilding(loader, scene, 'scene_compressed.glb', -40, 0, 3);
 
 // scanScene(loader, 'scene (2).glb', (loadedWorld) => {
 //     console.log("The world is ready!");
@@ -174,6 +174,7 @@ function drawDebugBoxes() {
         const geom = new THREE.BufferGeometry().setFromPoints(corners.concat([corners[0]]));
         const mat = new THREE.LineBasicMaterial({ color: 0x00ff00 });
         const line = new THREE.Line(geom, mat);
+        console.log(`🗺️ Map Bounds: minX:${mb.minX}, maxX:${mb.maxX}, minZ:${mb.minZ}, maxZ:${mb.maxZ}`);
         scene.add(line);
     } catch (e) {
         // ignore if mapBounds not ready
@@ -181,7 +182,7 @@ function drawDebugBoxes() {
 }
 
 // Uncomment to visualize collision boxes
-// drawDebugBoxes();
+drawDebugBoxes();
 
 // --- GAME LOOP ---
 function animate() {
@@ -268,16 +269,16 @@ function animate() {
         // Proximity radar to show prompt
         if (myAvatar) {
             // If the player is inside a room or sitting, show exit prompt
-                    if (insideRoom || inCafe || isSitting) {
-                        if (promptUI) {
-                            const main = promptUI.querySelector('.prompt-main');
-                            const muteHint = document.getElementById('muteHint');
-                            if (main) main.innerText = `Press O to get out of`;
-                            if (muteHint) muteHint.style.display = 'block';
-                            promptUI.style.display = 'block';
-                        }
-                        highlightedRoom = null;
-                    } else {
+            if (insideRoom || inCafe || isSitting) {
+                if (promptUI) {
+                    const main = promptUI.querySelector('.prompt-main');
+                    const muteHint = document.getElementById('muteHint');
+                    if (main) main.innerText = `Press O to get out of`;
+                    if (muteHint) muteHint.style.display = 'block';
+                    promptUI.style.display = 'block';
+                }
+                highlightedRoom = null;
+            } else {
                 const avatarWorldPos = new THREE.Vector3();
                 myAvatar.getWorldPosition(avatarWorldPos);
                 let foundRoom = null;
@@ -290,7 +291,7 @@ function animate() {
                         avatarWorldPos.z > room.minZ - RADAR_DISTANCE && 
                         avatarWorldPos.z < room.maxZ + RADAR_DISTANCE) {
                         foundRoom = room; 
-                        break; 
+                    break; 
                     }
                 }
 

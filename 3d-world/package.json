@@ -11,6 +11,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.3.1",
+    "mongoose": "^9.3.2",
     "socket.io": "^4.8.3",
     "three": "^0.183.2"
   }

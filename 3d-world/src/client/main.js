@@ -76,6 +76,31 @@ if (Array.isArray(ROOMS) && ROOMS.length > 0) {
 // const buildingBoundaries = ROOMS.map(r => ({ minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ }));
 
 // Setup lighting, floor, grid via environment module
+// UI Tab Toggling Logic
+let isRegistering = false;
+const tabLogin = document.getElementById('tab-login');
+const tabRegister = document.getElementById('tab-register');
+const formTitle = document.getElementById('form-title');
+const formSubtitle = document.getElementById('form-subtitle');
+const submitBtn = document.getElementById('submit-btn');
+
+tabLogin.addEventListener('click', () => {
+    isRegistering = false;
+    tabLogin.classList.add('active');
+    tabRegister.classList.remove('active');
+    formTitle.innerText = "Welcome Back";
+    formSubtitle.innerText = "Log in to join the voice chat.";
+    submitBtn.innerText = "Enter World";
+});
+
+tabRegister.addEventListener('click', () => {
+    isRegistering = true;
+    tabRegister.classList.add('active');
+    tabLogin.classList.remove('active');
+    formTitle.innerText = "Create Account";
+    formSubtitle.innerText = "Sign up to customize your avatar.";
+    submitBtn.innerText = "Register";
+});
 setupEnvironment(scene);
 
 // loadBuilding is provided by ./loader.js

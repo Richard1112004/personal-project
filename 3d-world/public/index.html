@@ -27,6 +27,33 @@
         }
     </script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <div id="login-overlay" class="overlay-container">
+        <div class="glass-card">
+            <h1 id="form-title">Welcome to the Plaza</h1>
+            <p id="form-subtitle">Log in to join the voice chat.</p>
+
+            <div class="tabs">
+                <button id="tab-login" class="active">Login</button>
+                <button id="tab-register">Register</button>
+            </div>
+
+            <form id="auth-form">
+                <div class="input-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" required autocomplete="off" placeholder="e.g. Hung_Nguyen">
+                </div>
+                
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required placeholder="••••••••">
+                </div>
+
+                <p id="error-message" class="error-text"></p>
+                
+                <button type="submit" id="submit-btn" class="glow-btn">Enter World</button>
+            </form>
+        </div>
+    </div>
     <script type="module" src="../src/client/main.js"></script>
 </body>
 </html>

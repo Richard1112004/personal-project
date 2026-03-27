@@ -5,7 +5,7 @@ const bcrypt = require('bcrypt'); // 1. Imports at the top
 const UserSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true, trim: true },
     password: { type: String, required: true },
-    avatarModel: { type: String, default: 'casual_boy.glb' },
+    avatarModel: { type: String, default: 'Male_Casual.glb' },
 }, { timestamps: true });
 
 // 3. Add Middleware (MUST be after UserSchema is defined)

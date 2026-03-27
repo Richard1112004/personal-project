@@ -7,18 +7,27 @@ import { updateCamera } from './camera.js';
 import { handlePlayerMovement, keys, sitOnChair, standUp, exitRoom } from './movement.js';
 import { setupEnvironment } from './environment.js';
 import { createLoaderAndClock, loadBuilding, loadAvatar, allGameChairs } from './loader.js';
-import { joinRoom, leaveRoom, toggleMute as voiceToggleMute, registerUser, loginUser } from './voice.js';
+import { joinRoom, leaveRoom, toggleMute as voiceToggleMute, registerUser, loginUser, sendMovement, getSocket } from './voice.js';
+
+// console.log('[MAIN] Script loaded and imports successful');
 
 // --- INITIALIZE SCENE & RENDERER ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xaaaaaa);
 scene.fog = new THREE.Fog(0xaaaaaa, 20, 150);
+// Add ambient light to ensure scene is visible
+// const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+// scene.add(ambientLight);
+// console.log('[Scene] Ambient light added for visibility');
 
 const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
+renderer.domElement.style.zIndex = '1'; // Ensure canvas is above overlays
+renderer.domElement.style.display = 'block'; // Explicit visibility
 document.body.appendChild(renderer.domElement);
+// console.log('[Canvas] WebGL renderer created and appended to body', 'Size:', window.innerWidth, 'x', window.innerHeight);
 
 // --- CHARACTER & CONTROLS ---
 const playerGroup = new THREE.Group();
@@ -38,25 +47,54 @@ window.isUserAuthenticated = window.isUserAuthenticated || false;
 if (instructions) instructions.addEventListener('click', () => {
     if (window.isUserAuthenticated) controls.lock();
 });
-controls.addEventListener('lock', () => { if (blocker) blocker.style.display = 'none'; });
-controls.addEventListener('unlock', () => { if (blocker) blocker.style.display = 'flex'; });
+controls.addEventListener('lock', () => { 
+    // console.log('[PointerLock] LOCKED - movement should now work');
+    if (blocker) blocker.style.display = 'none'; 
+});
+controls.addEventListener('unlock', () => { 
+    // console.log('[PointerLock] UNLOCKED - showing blocker for re-lock');
+    if (blocker) {
+        blocker.style.display = 'flex';
+        blocker.style.pointerEvents = 'auto';  // RE-ENABLE clicks on instructions
+    }
+});
 
 // Called when authentication is complete (login or auto-login)
 function authSuccess() {
     window.isUserAuthenticated = true;
+    // console.log('[authSuccess] Setting isUserAuthenticated = true');
+    
     // Ensure blocker/instructions are visible and functional
     try {
-        if (blocker) blocker.style.display = 'flex';
-        if (instructions) instructions.style.display = '';
-    } catch (e) {}
-
-    // Fade out and remove overlay if present
-    const overlay = document.getElementById('login-overlay');
-    if (overlay) {
-        overlay.style.transition = 'opacity 220ms ease';
-        overlay.style.opacity = '0';
-        overlay.style.pointerEvents = 'none';
-        setTimeout(() => { try { overlay.remove(); } catch (e) {} }, 260);
+        // console.log('[authSuccess] called, hiding overlays');
+        if (blocker) {
+            blocker.style.display = 'none';
+            blocker.style.pointerEvents = 'none';
+        }
+        if (instructions) {
+            instructions.style.display = 'block';
+            // console.log('[authSuccess] Instructions visible, attempting auto-lock...');
+            // Auto-lock the pointer for immediate movement
+            setTimeout(() => {
+                // console.log('[authSuccess] Calling controls.lock()');
+                try {
+                    controls.lock();
+                    // console.log('[authSuccess] controls.lock() succeeded');
+                } catch (err) {
+                    console.error('[authSuccess] controls.lock() failed:', err);
+                }
+            }, 100);
+        }
+        // Also hide/remove the login overlay if present
+        const overlay = document.getElementById('login-overlay');
+        if (overlay) {
+            overlay.style.transition = 'opacity 220ms ease';
+            overlay.style.opacity = '0';
+            overlay.style.pointerEvents = 'none';
+            setTimeout(() => { try { overlay.remove(); console.log('[authSuccess] login-overlay removed'); } catch (e) { console.warn(e); } }, 260);
+        }
+    } catch (e) {
+        console.error('[authSuccess] Error:', e);
     }
 }
 
@@ -78,6 +116,11 @@ let currentChair = null; // currently occupied chair object from allGameChairs
 let highlightedRoom = null; // room currently shown in the promptUI
 let insideRoom = null; // the room the player has entered (must press 'O' to exit)
 // Compute map-wide bounding box from ROOMS so player can't leave the map
+// Network sync timer
+let lastSendTime = 0;
+const otherPlayers = {};
+let socket = null; // global socket reference assigned at login
+const SEND_TICK_RATE = 50; // 50 milliseconds = 20 network updates per second
 let mapBounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
 if (Array.isArray(ROOMS) && ROOMS.length > 0) {
     for (const r of ROOMS) {
@@ -130,6 +173,42 @@ const usernameInput = document.getElementById('username');
 const passwordInput = document.getElementById('password');
 const errorMsg = document.getElementById('error-message');
 
+// Presence panel (shows online users and chair occupancy)
+let presencePanel = document.getElementById('presence-panel');
+if (!presencePanel) {
+    presencePanel = document.createElement('div');
+    presencePanel.id = 'presence-panel';
+    presencePanel.style.cssText = 'position:fixed;right:10px;top:10px;z-index:9999;background:rgba(0,0,0,0.6);color:#fff;padding:8px;border-radius:6px;font-size:13px;max-width:220px;max-height:320px;overflow:auto;';
+    presencePanel.innerHTML = '<strong>Online</strong><div id="presence-users" style="margin-top:6px"></div><hr style="border:none;border-top:1px solid rgba(255,255,255,0.12);margin:6px 0"><strong>Chairs</strong><div id="presence-chairs" style="margin-top:6px"></div>';
+    document.body.appendChild(presencePanel);
+}
+
+function renderPresence(data) {
+    try {
+        const usersEl = document.getElementById('presence-users');
+        const chairsEl = document.getElementById('presence-chairs');
+        usersEl.innerHTML = '';
+        chairsEl.innerHTML = '';
+        if (data && Array.isArray(data.users)) {
+            data.users.forEach(u => {
+                const el = document.createElement('div');
+                el.style.marginBottom = '4px';
+                el.innerText = (u.username || 'unknown') + (u.socketId ? ` (${u.socketId.substring(0,6)})` : '');
+                usersEl.appendChild(el);
+            });
+        }
+        if (data && data.chairs) {
+            for (const cid in data.chairs) {
+                const c = data.chairs[cid];
+                const el = document.createElement('div');
+                el.style.marginBottom = '4px';
+                el.innerText = cid + ': ' + (c && c.occupied ? `occupied by ${c.by && c.by.username ? c.by.username : (c.by && c.by.socketId ? c.by.socketId.substring(0,6) : 'someone')}` : 'free');
+                chairsEl.appendChild(el);
+            }
+        }
+    } catch (e) { console.warn('renderPresence error', e); }
+}
+
 authForm.addEventListener('submit', (e) => {
     e.preventDefault(); // Stops the browser from reloading the page
 
@@ -177,9 +256,124 @@ authForm.addEventListener('submit', (e) => {
             submitBtn.innerText = "Enter World";
             if (res.success) {
                 errorMsg.style.color = "#4facfe";
-                errorMsg.innerText = `✅ Welcome ${res.user.username}! Choose a room to enter.`;
-                // Run auth success flow (fade/remove overlay, enable input)
+                errorMsg.innerText = `✅ Welcome ${res.user.username}!`;
+                
                 authSuccess();
+                
+                // --- 🚀 NEW: MULTIPLAYER SETUP ---
+                socket = getSocket();
+
+                // Immediately request presence map so we see other authenticated users
+                try { socket.emit('request-presence'); } catch (e) { console.warn('request-presence failed', e); }
+
+                // Helper Function: Add a Ghost Player to the scene
+                const addOtherPlayer = (playerData) => {
+                    if (otherPlayers[playerData.id] || playerData.id === socket.id) return; 
+
+                    // 1. Create a group to hold their 3D body
+                    const ghostGroup = new THREE.Group();
+                    ghostGroup.position.set(playerData.x, playerData.y, playerData.z);
+                    ghostGroup.rotation.y = playerData.rotY;
+                    scene.add(ghostGroup);
+
+                    // 2. Save their data to our dictionary
+                    otherPlayers[playerData.id] = {
+                        group: ghostGroup,
+                        targetPos: new THREE.Vector3(playerData.x, playerData.y, playerData.z),
+                        targetRotY: playerData.rotY,
+                        action: playerData.action,
+                        mixer: null,
+                        animations: {}
+                    };
+
+                    // 3. Load their actual 3D model
+                    // (Adjust the path if your models are stored elsewhere!)
+                    const modelName = playerData.avatarModel || 'Male_Casual.glb';
+                    loader.load(`./assets/model/${modelName}`, (gltf) => {
+                        const model = gltf.scene;
+                        // IMPORTANT: Scale the model to match the local player
+                        model.scale.set(0.01, 0.01, 0.01);
+                        model.rotation.y = Math.PI;
+                        model.position.set(0, -6, 0);
+                        ghostGroup.add(model);
+
+                        // Setup their animations (Running / Idle)
+                        if (gltf.animations && gltf.animations.length > 0) {
+                            const ghostMixer = new THREE.AnimationMixer(model);
+                            otherPlayers[playerData.id].mixer = ghostMixer;
+                            
+                            const clipIdle = gltf.animations.find(a => a.name.toLowerCase().includes('idle')) || gltf.animations[0];
+                            const clipRun = gltf.animations.find(a => a.name.toLowerCase().includes('run')) || gltf.animations[1];
+                            const clipSit = gltf.animations.find(a => a.name.toLowerCase().includes('sit')) || gltf.animations[2];
+                            
+                            if (clipIdle) otherPlayers[playerData.id].animations['idle'] = ghostMixer.clipAction(clipIdle);
+                            if (clipRun) otherPlayers[playerData.id].animations['run'] = ghostMixer.clipAction(clipRun);
+                            if (clipSit) otherPlayers[playerData.id].animations['sit'] = ghostMixer.clipAction(clipSit);
+
+                            // Start them in their current action
+                            if (otherPlayers[playerData.id].animations[playerData.action]) {
+                                otherPlayers[playerData.id].animations[playerData.action].play();
+                            }
+                        }
+                    });
+                };
+
+                // A. Load everyone already standing in the world
+                const worldPlayers = res.user.worldState.players;
+                for (let id in worldPlayers) {
+                    addOtherPlayer(worldPlayers[id]);
+                }
+
+                // B. Listen for NEW people joining
+                socket.on('player-joined', (playerData) => {
+                    addOtherPlayer(playerData);
+                    // console.log(`👋 ${playerData.username} spawned in!`);
+                });
+
+                // C. Listen for people moving
+                socket.on('player-moved', (moveData) => {
+                    const ghost = otherPlayers[moveData.id];
+                    if (ghost) {
+                        // Don't teleport! Just update their "Target" destination
+                        ghost.targetPos.set(moveData.x, moveData.y, moveData.z);
+                        ghost.targetRotY = moveData.rotY;
+                        
+                        // Handle Animation Changes (Start running vs Stop running)
+                        if (ghost.action !== moveData.action) {
+                            if (ghost.animations[ghost.action]) ghost.animations[ghost.action].stop();
+                            ghost.action = moveData.action;
+                            if (ghost.animations[ghost.action]) ghost.animations[ghost.action].play();
+                        }
+                    }
+                });
+
+                // D. Listen for people logging off
+                socket.on('player-left', (id) => {
+                    if (otherPlayers[id]) {
+                        scene.remove(otherPlayers[id].group); // Remove from 3D world
+                        delete otherPlayers[id]; // Delete from memory
+                    }
+                });
+
+                // E. Presence updates (authenticated users + chairs)
+                socket.on('presence-update', (data) => {
+                    try {
+                        // Update chairs occupancy locally if provided
+                        if (data.chairs) {
+                            for (const cid in data.chairs) {
+                                const chairState = data.chairs[cid];
+                                const idx = allGameChairs.findIndex(c => c.name === cid);
+                                if (idx !== -1) {
+                                    allGameChairs[idx].isOccupied = !!(chairState && chairState.occupied);
+                                }
+                            }
+                        }
+
+                        // Update presence UI
+                        renderPresence(data);
+                    } catch (e) { console.warn('presence-update error', e); }
+                });
+
             } else {
                 errorMsg.style.color = "#ff6b6b";
                 errorMsg.innerText = "❌ " + (res.message || 'Login failed');
@@ -296,13 +490,40 @@ function drawDebugBoxes() {
 drawDebugBoxes();
 
 // --- GAME LOOP ---
+let animationFrameCount = 0;
 function animate() {
-    requestAnimationFrame(animate);
-    const delta = clock.getDelta();
+    try {
+        animationFrameCount++;
+        // if (animationFrameCount === 1) {
+        //     console.log('[Animation] FIRST FRAME - Loop is running!');
+        //     console.log('[Animation] Renderer:', renderer ? 'exists' : 'MISSING');
+        //     console.log('[Animation] Scene objects:', scene.children.length);
+        // }
+        // if (animationFrameCount <= 3) {
+        //     console.log('[Animation] Frame', animationFrameCount);
+        // }
+        requestAnimationFrame(animate);
+        const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
+    // --- MULTIPLAYER: Update Ghost Positions smoothly ---
+    for (let id in otherPlayers) {
+        const ghost = otherPlayers[id];
+        
+        // 1. Smoothly slide the 3D model toward the target position (LERP)
+        ghost.group.position.lerp(ghost.targetPos, 0.2); // 0.2 is the glide speed
+        
+        // 2. Smoothly rotate the body to face the right direction
+        const diff = ghost.targetRotY - ghost.group.rotation.y;
+        const normalizedDiff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        ghost.group.rotation.y += normalizedDiff * 0.2;
+
+        // 3. Play their run/idle animation
+        if (ghost.mixer) ghost.mixer.update(delta);
+    }
 
     if (controls.isLocked) {
         const { prevX, prevZ } = handlePlayerMovement(controls, playerGroup, cameraHolder, PLAYER_SPEED, isSitting);
+        // if (animationFrameCount <= 5) console.log('[Animate] Frame', animationFrameCount, 'isLocked=true, movement processed');
         let hitWall = false; // moved to top-level of locked-controls scope to avoid scope errors
 
         if (!isSitting) {
@@ -338,14 +559,6 @@ function animate() {
                 if (actionRun) actionRun.stop();
             }
             if (actionIdle) actionIdle.stop();
-            // if (actionSit) {
-            //     if (!actionSit.isRunning()) {
-            //         actionSit.reset();
-            //         actionSit.setLoop(THREE.LoopOnce);
-            //         actionSit.clampWhenFinished = true;
-            //         actionSit.play();
-            //     }
-            // }
         }
 
         // --- PHYSICAL COLLISIONS (Solid Walls) ---
@@ -425,14 +638,55 @@ function animate() {
             }
         }
     }
+    // --- MULTIPLAYER: BROADCAST MOVEMENT ---
+    // Only broadcast if the user is actually logged in
+    if (window.isUserAuthenticated && controls.isLocked) {
+        const now = Date.now();
+        
+        // Only send data every 50ms (the Tick Rate)
+        if (now - lastSendTime > SEND_TICK_RATE) {
+            
+            // Figure out what animation the player is currently doing
+            let currentAction = 'idle';
+            if (isMoving) currentAction = 'run';
+            if (isSitting) currentAction = 'sit';
 
+            // Send the exact GPS coordinates and rotation to the server
+            sendMovement({
+                x: cameraHolder.position.x,
+                y: cameraHolder.position.y,
+                z: cameraHolder.position.z,
+                rotY: cameraHolder.rotation.y, // So other players see which way you are looking
+                action: currentAction
+            });
+            
+            lastSendTime = now; // Reset the timer
+        }
+    }
     // Camera follow logic
     updateCamera(camera, cameraHolder);
     renderer.render(scene, camera);
+    
+    // Diagnostic logs for first few frames
+    // if (animationFrameCount === 1) {
+    //     console.log('[Animation] First frame rendered, scene should be visible');
+    //     console.log('[Diagnostic] isUserAuthenticated:', window.isUserAuthenticated);
+    //     console.log('[Diagnostic] controls.isLocked:', controls.isLocked);
+    //     console.log('[Diagnostic] blocker style.display:', blocker ? blocker.style.display : 'N/A');
+    // }
+    // if (animationFrameCount === 60) {
+    //     console.log('[Diagnostic Frame 60] isUserAuthenticated:', window.isUserAuthenticated, 'isLocked:', controls.isLocked, 'cameraPos:', cameraHolder.position);
+    // }
+    } catch (e) {
+        console.error('Error in animation loop:', e);
+    }
+    
 }
 window.addEventListener('keydown', (event) => {
+    // normalize key safely
+    const key = event && event.key ? event.key.toLowerCase() : null;
     // 1. Did the browser even hear the key?
-    if (event.key.toLowerCase() === 'e') {
+    if (key === 'e') {
         
         if (controls.isLocked) {
             if (!isSitting && !inCafe && myAvatar) {
@@ -469,6 +723,8 @@ window.addEventListener('keydown', (event) => {
                                 _savedCameraQuat = _saved._savedCameraQuat;
                                 isSitting = _saved.isSitting;
                             }
+                            // Notify server that we occupied this chair
+                            try { socket.emit('occupy-chair', { chairId: closestChair.name, occupy: true }); } catch (e) { console.warn('emit occupy-chair failed', e); }
                             if (promptUI) promptUI.style.display = 'none';
                             return;
                         }
@@ -506,30 +762,45 @@ window.addEventListener('keydown', (event) => {
 });
 window.addEventListener('keydown', (event) => {
     // Press 'P' to print your exact current location
-    if (event.key.toLowerCase() === 'p') {
+    const key = event && event.key ? event.key.toLowerCase() : null;
+    if (key === 'p') {
         console.log(`📍 MY GPS LOCATION: X: ${cameraHolder.position.x.toFixed(2)}, Z: ${cameraHolder.position.z.toFixed(2)}`);
     }
 });
 
 // Press 'M' to toggle microphone via voice client
 window.addEventListener('keydown', (event) => {
-    if (event.key.toLowerCase() === 'm') {
+    const key = event && event.key ? event.key.toLowerCase() : null;
+    if (key === 'm') {
         try { voiceToggleMute(); } catch (e) { console.warn(e); }
     }
 });
 
 // Press 'O' to stand up / resume running when sitting
 window.addEventListener('keydown', (event) => {
-    if (event.key.toLowerCase() === 'o') {
+    const key = event && event.key ? event.key.toLowerCase() : null;
+    if (key === 'o') {
         // If sitting, stand up (this will also free the chair)
         if (isSitting) {
             console.log('🔓 Standing up and resuming movement');
+            const prevChair = currentChair;
             const _res = standUp(cameraHolder, playerGroup, { actionIdle, actionRun, actionSit }, currentChair, allGameChairs, _savedCameraPos, _savedCameraQuat);
             isSitting = _res.isSitting;
             inCafe = _res.inCafe;
             currentChair = _res.currentChair;
             _savedCameraPos = _res._savedCameraPos;
             _savedCameraQuat = _res._savedCameraQuat;
+
+            // Notify server that we freed this chair
+            try {
+                if (prevChair && prevChair.name) {
+                    // update local chairs array if present
+                    const idx = allGameChairs.findIndex(c => c.name === prevChair.name);
+                    if (idx !== -1) allGameChairs[idx].isOccupied = false;
+                    if (socket && socket.emit) socket.emit('occupy-chair', { chairId: prevChair.name, occupy: false });
+                }
+            } catch (e) { console.warn('emit occupy-chair (free) failed', e); }
+
             // after standing, also exit the room if desired
             if (insideRoom) {
                 const prevName = insideRoom.name;
@@ -564,7 +835,14 @@ window.addEventListener('keydown', (event) => {
         console.warn('⛔ You are not sitting and not inside a room.');
     }
 });
-animate();
+// console.log('[MAIN] Script reached end, about to call animate()');
+// console.log('[MAIN] Current values - renderer:', typeof renderer, 'camera:', typeof camera, 'scene:', typeof scene);
+try {
+    animate();
+    // console.log('[MAIN] animate() call succeeded');
+} catch (e) {
+    console.error('[MAIN] Error calling animate():', e);
+}
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;

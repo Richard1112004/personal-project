@@ -202,6 +202,17 @@ function loginUser(username, password, callback) {
 
     socket.emit('login-user', { username, password });
 }
+// --- NEW FUNCTION: Send Movement Data ---
+function sendMovement(positionData) {
+    // Only send if the socket actually exists and is connected
+    if (socket && socket.connected) {
+        socket.emit('player-moving', positionData);
+    }
+}
+// --- NEW: Expose the socket so main.js can listen to game events ---
+function getSocket() {
+    return socket;
+}
 
-// IMPORTANT: Update your export at the very bottom!
-export { joinRoom, leaveRoom, toggleMute, registerUser, loginUser };
+// IMPORTANT: Add getSocket to your export list!
+export { joinRoom, leaveRoom, toggleMute, registerUser, loginUser, sendMovement, getSocket };

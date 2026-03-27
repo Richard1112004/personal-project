@@ -17,6 +17,12 @@ const io = require("socket.io")(3000, {
 });
 
 const activeRooms = {};
+const gameWorld = {
+    players: {}, // Stores everyone's X, Y, Z, and Avatar Model
+    chairs: {}   // We will use this in Stage 2!
+};
+// Map of currently authenticated users by socket id
+const authenticatedUsers = {};
 const mongoUri = process.env.MONGO_URI;
 let isMongoReady = false;
 
@@ -81,15 +87,19 @@ io.on("connection", (socket) => {
 });
 
     // Login handler
+    // Login handler
     socket.on('login-user', async (data) => {
         try {
             if (!isMongoReady) {
                 return socket.emit('error-msg', 'Auth is unavailable: MONGO_URI is not configured on server.');
             }
+            
+            // 1. Find the user
             const { username, password } = data;
             const user = await User.findOne({ username });
             if (!user) return socket.emit('login-failed', 'User not found');
 
+            // 2. Check the password
             let ok = false;
             if (bcrypt && typeof user.password === 'string' && user.password.startsWith('$2')) {
                 ok = await bcrypt.compare(password, user.password);
@@ -99,19 +109,95 @@ io.on("connection", (socket) => {
 
             if (!ok) return socket.emit('login-failed', 'Invalid credentials');
 
-            // Successful login
+            // 3. SUCCESSFUL LOGIN! Let's spawn them into the server's tracking map
             socket.userId = user._id;
-            socket.emit('login-success', { username: user.username, id: user._id });
-            console.log(`User logged in: ${user.username} (${socket.id})`);
+            socket.username = user.username;
+            
+            gameWorld.players[socket.id] = {
+                id: socket.id,
+                username: user.username,
+                avatarModel: user.avatarModel || 'casual_boy.glb', // Fallback to boy
+                x: 0, y: 6, z: 15, // Your default cameraHolder starting position
+                rotY: 0,
+                action: 'idle'
+            };
+
+            // 4. Tell the logging-in player about everyone ALREADY in the world
+            socket.emit('login-success', { 
+                username: user.username, 
+                id: user._id,
+                worldState: gameWorld // Send them the map!
+            });
+
+            // 4.5 Add to authenticated users map and broadcast presence to all clients
+            authenticatedUsers[socket.id] = {
+                socketId: socket.id,
+                userId: user._id,
+                username: user.username
+            };
+            io.emit('presence-update', { users: Object.values(authenticatedUsers), chairs: gameWorld.chairs });
+
+            // 5. Tell everyone ELSE that a new player just spawned in
+            socket.broadcast.emit('player-joined', gameWorld.players[socket.id]);
+            
+            console.log(`🌍 Player spawned into world: ${user.username}`);
         } catch (err) {
             console.error('Login error:', err);
             socket.emit('error-msg', 'Server error during login');
+        }
+    });
+    socket.on('player-moving', (moveData) => {
+        if (gameWorld.players[socket.id]) {
+            // Update the server's map
+            gameWorld.players[socket.id].x = moveData.x;
+            gameWorld.players[socket.id].y = moveData.y;
+            gameWorld.players[socket.id].z = moveData.z;
+            gameWorld.players[socket.id].rotY = moveData.rotY;
+            gameWorld.players[socket.id].action = moveData.action;
+
+            // Immediately broadcast this new position to everyone else
+            socket.broadcast.emit('player-moved', gameWorld.players[socket.id]);
+        }
+    });
+
+    // Client requests to occupy or free a chair
+    socket.on('occupy-chair', (payload) => {
+        try {
+            const { chairId, occupy } = payload; // occupy: true/false
+            if (!chairId) return;
+
+            if (occupy) {
+                gameWorld.chairs[chairId] = {
+                    occupied: true,
+                    by: authenticatedUsers[socket.id] || { socketId: socket.id, username: socket.username || 'unknown' }
+                };
+            } else {
+                // free the chair if occupied by this socket
+                if (gameWorld.chairs[chairId] && gameWorld.chairs[chairId].by && gameWorld.chairs[chairId].by.socketId === socket.id) {
+                    gameWorld.chairs[chairId] = { occupied: false };
+                }
+            }
+            console.log(`Chair ${chairId} is now ${occupy ? 'occupied' : 'free'} by ${socket.username || socket.id}`);
+
+            // Notify everyone of the updated chairs and authenticated users
+            io.emit('presence-update', { users: Object.values(authenticatedUsers), chairs: gameWorld.chairs });
+        } catch (err) {
+            console.error('Error handling occupy-chair:', err);
         }
     });
 
     // Disconnect handler: clean up user from all rooms
     socket.on("disconnect", () => {
         console.log("User disconnected: " + socket.id);
+        if (gameWorld.players[socket.id]) {
+            delete gameWorld.players[socket.id];
+            io.emit('player-left', socket.id); 
+        }
+        // Remove from authenticated users and broadcast presence
+        if (authenticatedUsers[socket.id]) {
+            delete authenticatedUsers[socket.id];
+            io.emit('presence-update', { users: Object.values(authenticatedUsers), chairs: gameWorld.chairs });
+        }
         for (const roomId in activeRooms) {
             let room = activeRooms[roomId];
             if (room.includes(socket.id)) {
@@ -137,6 +223,13 @@ io.on("connection", (socket) => {
             console.log(`User ${socket.id} manually left room: ${roomId}`);
             if (activeRooms[roomId].length === 0) delete activeRooms[roomId];
         }
+    });
+
+    // Allow clients to request current presence map
+    socket.on('request-presence', () => {
+        try {
+            socket.emit('presence-update', { users: Object.values(authenticatedUsers), chairs: gameWorld.chairs });
+        } catch (err) { console.error('request-presence error', err); }
     });
 });
 
